@@ -62,21 +62,43 @@ app = typer.Typer(
 
 import torch
 
-def resolve_device(device_str: str) -> torch.device:
-    if device_str == "cpu":
-        return torch.device("cpu")
-    if device_str == "mps":
-        if torch.backends.mps.is_available():
-            return torch.device("mps")
-        raise RuntimeError("MPS is not available. Are you on macOS with Apple Silicon and PyTorch ≥ 1.13?")
-    if device_str.isdigit():
-        index = int(device_str)
-        if not torch.cuda.is_available():
-            raise RuntimeError("CUDA is not available.")
-        if index >= torch.cuda.device_count():
-            raise ValueError(f"CUDA device index {index} out of range.")
-        return torch.device(f"cuda:{index}")
-    raise ValueError(f"Unknown device string: '{device_str}'")
+from constants import Device
+import torch
+
+def resolve_device(device: Device) -> torch.device:
+    """
+    Resuelve un valor del enum Device a una instancia de torch.device.
+
+    Args:
+        device (Device): Valor del enum que indica el dispositivo deseado.
+
+    Returns:
+        torch.device: Dispositivo compatible con PyTorch.
+    
+    Raises:
+        ValueError: Si el valor del enum no es reconocido o no es soportado.
+    """
+    match device:
+        case Device.auto:
+            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        case Device.cpu:
+            return torch.device("cpu")
+
+        case Device.mps:
+            if torch.backends.mps.is_available():
+                return torch.device("mps")
+            raise RuntimeError("MPS no está disponible. Requiere macOS con Apple Silicon y PyTorch ≥ 1.13.")
+
+        case Device.cuda:
+            if not torch.cuda.is_available():
+                raise RuntimeError("CUDA no está disponible en este sistema.")
+            return torch.device("cuda")
+
+        case _:
+            raise ValueError(f"Dispositivo no soportado: {device}")
+
+
 
 def expand_audio_inputs(inputs: List[str]) -> List[Path]:
     """Expands patterns and verifies input files."""
