@@ -58,14 +58,25 @@ app = typer.Typer(
 )
 
 # Centralized utility functions
-def resolve_device(device: Device | str) -> Optional[str]:
-    """Resolves the device selection."""
-    device_str = str(device)
-    # Extract only the value part if it's an enum representation
-    if "." in device_str:
-        device_str = device_str.split(".")[-1]
-        
-    return None if device_str == "auto" else device_str
+# verify_system.py o utils.py
+
+import torch
+
+def resolve_device(device_str: str) -> torch.device:
+    if device_str == "cpu":
+        return torch.device("cpu")
+    if device_str == "mps":
+        if torch.backends.mps.is_available():
+            return torch.device("mps")
+        raise RuntimeError("MPS is not available. Are you on macOS with Apple Silicon and PyTorch ≥ 1.13?")
+    if device_str.isdigit():
+        index = int(device_str)
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA is not available.")
+        if index >= torch.cuda.device_count():
+            raise ValueError(f"CUDA device index {index} out of range.")
+        return torch.device(f"cuda:{index}")
+    raise ValueError(f"Unknown device string: '{device_str}'")
 
 def expand_audio_inputs(inputs: List[str]) -> List[Path]:
     """Expands patterns and verifies input files."""

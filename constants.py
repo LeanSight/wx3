@@ -15,6 +15,7 @@ class Device(str, Enum):
     auto = "auto"
     cpu = "cpu"
     cuda = "cuda"
+    mps = "mps"
 
 class LogLevel(str, Enum):
     """Available logging levels."""
