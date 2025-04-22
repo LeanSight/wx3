@@ -1,0 +1,20 @@
+# Compatible con Python 3.11 y CUDA 12.4
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+torch==2.6.0+cu124
+torchaudio==2.6.0+cu124
+
+pyannote.audio==3.3.2
+pyannote.core>=5.0.0
+
+numpy>=1.19.0
+scipy>=1.5.0
+librosa>=0.8.0
+matplotlib>=3.1.0
+pytorch-lightning>=2.0.0
+
+speechbrain==1.0.2
+semver>=3.0
+typing-extensions>=4.0.0
+rich
+transformers
