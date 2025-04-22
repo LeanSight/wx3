@@ -41,7 +41,7 @@ from diarization import (
 )
 from lazy_loading import get_loading_times
 from output_formatters import save_json, save_subtitles
-from alignment import align_diarization_with_transcription, group_turns_by_speaker, slice_audio
+from alignment import align_diarization_with_transcription, group_turns_by_speaker, slice_audio, apply_speaker_names
 from input_media import load_media, get_supported_extensions
 
 # Types for annotations
@@ -358,6 +358,9 @@ def process(
     ),
     log_file: Optional[str] = typer.Option(None, help=HELP_LOG_FILE),
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
+    speaker_names: Optional[str] = typer.Option(
+        None, help="Lista separada por coma con nombres de hablantes para reemplazar SPEAKER_xx"
+    )
 ):
     """
     Pipeline combinado: diarización ➜ transcripción ➜ alineado/exportación.
@@ -448,6 +451,10 @@ def process(
             aligned_chunks = align_diarization_with_transcription(
                 diar_segments, tres.chunks
             )
+
+            if speaker_names:
+                names_list = [name.strip() for name in speaker_names.split(",")]
+                apply_speaker_names(aligned_chunks, names_list)
 
             # ───── 4 · EXPORTACIÓN FINAL ─────
             base_p = get_output_base_path(audio_path, "process")

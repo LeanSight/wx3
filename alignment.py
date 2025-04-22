@@ -95,3 +95,50 @@ def group_turns_by_speaker(
         grouped.append({"start": current_start, "end": current_end, "speaker": speaker})
 
     return sorted(grouped, key=lambda t: t["start"])
+
+
+from typing import List, Dict
+import logging
+
+def log_first_all_speakers_participation(chunks: List[Dict], logger: logging.Logger) -> None:
+    """
+    Registra en el log el primer segmento en el que todos los hablantes han participado
+    al menos una vez, basado en la información de los chunks alineados.
+
+    Args:
+        chunks (List[Dict]): Lista de segmentos con timestamp y etiqueta de hablante.
+        logger (logging.Logger): Logger configurado para la aplicación.
+    """
+    all_speakers = {chunk["speaker"] for chunk in chunks if "speaker" in chunk}
+    seen_speakers = set()
+
+    for chunk in chunks:
+        speaker = chunk.get("speaker")
+        if speaker:
+            seen_speakers.add(speaker)
+
+        if seen_speakers == all_speakers:
+            t_start, t_end = chunk["timestamp"]
+            logger.info(
+                f"🗣️ Todos los hablantes participaron hasta {t_end:.2f}s "
+                f"(primer segmento: {t_start:.2f}s → {t_end:.2f}s)"
+            )
+            return
+
+from typing import List, Dict
+
+def apply_speaker_names(chunks: List[Dict], speaker_names: List[str]) -> None:
+    """
+    Reemplaza los nombres de los hablantes genéricos (SPEAKER_00, SPEAKER_01...) 
+    por nombres personalizados en los chunks modificando en sitio.
+
+    Args:
+        chunks: Lista de diccionarios con clave 'speaker'.
+        speaker_names: Lista de nombres personalizados.
+    """
+    for chunk in chunks:
+        speaker = chunk.get("speaker")
+        if speaker and speaker.startswith("SPEAKER_"):
+            idx = int(speaker.replace("SPEAKER_", ""))
+            if idx < len(speaker_names):
+                chunk["speaker"] = speaker_names[idx]
