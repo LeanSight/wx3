@@ -13,7 +13,6 @@ from constants import (
     Task, Device, LogLevel, DEFAULT_MODEL, DEFAULT_TASK, DEFAULT_LANGUAGE,
     DEFAULT_CHUNK_LENGTH, DEFAULT_BATCH_SIZE, DEFAULT_ATTN_TYPE,
     DEFAULT_LOG_LEVEL, DEFAULT_FORMATS, MSG_NO_FILES_FOUND,
-    # Added new constants
     MSG_PROCESSING_FILES, MSG_PROCESSING_FILE, MSG_SAVING_RESULTS,
     MSG_FILE_SAVED, MSG_UNKNOWN_FORMAT, MSG_ERROR_PROCESSING,
     HELP_APP, HELP_AUDIO_INPUTS, HELP_MODEL, HELP_TASK, HELP_LANG,
@@ -58,46 +57,41 @@ app = typer.Typer(
 )
 
 # Centralized utility functions
-# verify_system.py o utils.py
-
 import torch
-
 from constants import Device
-import torch
 
-def resolve_device(device: Device) -> torch.device:
+def resolve_device(device: Device) -> str:
     """
-    Resuelve un valor del enum Device a una instancia de torch.device.
+    Resolves a Device enum value to a torch.device instance.
 
     Args:
-        device (Device): Valor del enum que indica el dispositivo deseado.
+        device: Enum value indicating the desired device.
 
     Returns:
-        torch.device: Dispositivo compatible con PyTorch.
+        String representation of the device compatible with PyTorch.
     
     Raises:
-        ValueError: Si el valor del enum no es reconocido o no es soportado.
+        ValueError: If the enum value is not recognized or not supported.
     """
     match device:
         case Device.auto:
-            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            return "cuda" if torch.cuda.is_available() else "cpu"
 
         case Device.cpu:
-            return torch.device("cpu")
+            return "cpu"
 
         case Device.mps:
             if torch.backends.mps.is_available():
-                return torch.device("mps")
-            raise RuntimeError("MPS no está disponible. Requiere macOS con Apple Silicon y PyTorch ≥ 1.13.")
+                return "mps"
+            raise RuntimeError("MPS is not available. Requires macOS with Apple Silicon and PyTorch ≥ 1.13.")
 
         case Device.cuda:
             if not torch.cuda.is_available():
-                raise RuntimeError("CUDA no está disponible en este sistema.")
-            return torch.device("cuda")
+                raise RuntimeError("CUDA is not available on this system.")
+            return "cuda"
 
         case _:
-            raise ValueError(f"Dispositivo no soportado: {device}")
-
+            raise ValueError(f"Unsupported device: {device}")
 
 
 def expand_audio_inputs(inputs: List[str]) -> List[Path]:
@@ -110,6 +104,7 @@ def expand_audio_inputs(inputs: List[str]) -> List[Path]:
         elif path.is_file():
             files.append(path)
     return list({f.resolve() for f in files if f.exists()})
+
 
 def get_output_base_path(audio_path: Path, command_name: str, *extra_parts: str) -> Path:
     """Generates a base path for output files following the standard pattern.
@@ -125,6 +120,7 @@ def get_output_base_path(audio_path: Path, command_name: str, *extra_parts: str)
     extra_suffix = "-".join(extra_parts)
     return audio_path.with_name(f"{audio_path.stem}-{command_name}-{extra_suffix}")
 
+
 def show_supported_formats() -> None:
     """Shows information about supported formats in the command help."""
     formats_info = get_supported_extensions()
@@ -138,6 +134,7 @@ def show_supported_formats() -> None:
         expand=False
     ))
 
+
 def show_loading_times(logger: logging.Logger) -> None:
     """Shows loading times if requested."""
     loading_times = get_loading_times()
@@ -146,10 +143,12 @@ def show_loading_times(logger: logging.Logger) -> None:
         for m, t in loading_times.items():
             logger.info(LOG_LOAD_TIME_ENTRY, m, t)
 
+
 def setup_logging(log_level: LogLevel, log_file: Optional[str]) -> None:
     """Configures the logging system based on parameters."""
     from logging_config import LogConfig, LogLevel as LG, configure_logging
     configure_logging(LogConfig(level=LG[log_level.name], log_file=log_file))
+
 
 def validate_inputs(inputs: List[Path]) -> None:
     """Validates that there are valid input files."""
@@ -163,7 +162,269 @@ def validate_inputs(inputs: List[Path]) -> None:
         typer.secho(MSG_NO_FILES_FOUND, fg=typer.colors.RED)
         raise typer.Exit(1)
 
-# Specific functions for each type of processing
+
+# --- Shared Command Utility Functions ---
+
+def setup_command(
+    log_level: LogLevel, 
+    log_file: Optional[str], 
+    show_formats: bool,
+    audio_inputs: List[str]
+) -> Optional[List[Path]]:
+    """
+    Common setup for CLI commands.
+    
+    Args:
+        log_level: Logging level
+        log_file: Optional log file path
+        show_formats: Whether to show supported formats
+        audio_inputs: List of audio input paths
+        
+    Returns:
+        List of expanded and validated files, or None if showing formats
+    """
+    setup_logging(log_level, log_file)
+    
+    if show_formats:
+        show_supported_formats()
+        return None
+        
+    files = expand_audio_inputs(audio_inputs)
+    validate_inputs(files)
+    
+    return files
+
+
+def prepare_diarization(
+    file_path: Path,
+    pipeline: Any,
+    num_speakers: Optional[int],
+    device_str: Optional[str],
+    logger: logging.Logger,
+    save_intermediate: bool = False
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Prepare diarization data for a file.
+    
+    Args:
+        file_path: Path to audio file
+        pipeline: Diarization pipeline
+        num_speakers: Number of speakers (optional)
+        device_str: Device string
+        logger: Logger instance
+        save_intermediate: Whether to save intermediate results
+        
+    Returns:
+        Tuple of (diarization segments, loaded audio)
+    """
+    logger.info(LOG_DIARIZING, file_path.name)
+    logger.info(LOG_NUM_SPEAKERS, "Auto-detect" if num_speakers is None else num_speakers)
+    
+    # Perform diarization without saving files
+    diar_result, audio = diarize_file(
+        audio_path=file_path,
+        command_name="process",
+        pipeline=pipeline,
+        num_speakers=num_speakers,
+        device=device_str
+    )
+    
+    # Extract segments from result
+    diar_segments = format_diarization_result(diar_result)["speakers"]
+    
+    # Optionally save intermediate result
+    if save_intermediate:
+        base_path = get_output_base_path(file_path, "process", "diarize", "intermediate")
+        save_json(base_path, format_diarization_result(diar_result))
+        logger.info(f"Intermediate diarization saved: {base_path.with_suffix('.json').name}")
+    
+    return diar_segments, audio
+
+
+def transcribe_by_speaker_turns(
+    diar_segments: List[Dict[str, Any]],
+    audio: Dict[str, Any],
+    pipeline: Any,
+    task_value: str,
+    language: Optional[str],
+    chunk_length: int,
+    batch_size: int,
+    logger: logging.Logger
+) -> TranscriptionResult:
+    """
+    Transcribe audio by processing each speaker turn separately.
+    
+    Args:
+        diar_segments: Diarization segments
+        audio: Audio data
+        pipeline: Transcription pipeline
+        task_value: Task value (transcribe/translate)
+        language: Language code
+        chunk_length: Chunk length in seconds
+        batch_size: Batch size
+        logger: Logger instance
+        
+    Returns:
+        TranscriptionResult object
+    """
+    # Log transcription parameters
+    logger.info(LOG_TASK, task_value)
+    logger.info(LOG_LANGUAGE, "Auto-detect" if language is None else language)
+    logger.info(LOG_SEGMENT_BATCH, chunk_length, batch_size)
+    
+    # Extract speaker segments and group by speaker
+    speaker_segments = [
+        {"start": seg["start"], "end": seg["end"], "speaker": seg["speaker"]}
+        for seg in diar_segments
+    ]
+    grouped_turns = group_turns_by_speaker(speaker_segments)
+    
+    # Process each turn
+    all_chunks = []
+    total_processing_time = 0.0
+    
+    for turn in grouped_turns:
+        # Extract turn information
+        turn_start = turn["start"]
+        turn_end = turn["end"]
+        speaker = turn["speaker"]
+        
+        # Process audio segment
+        turn_audio = slice_audio(audio, turn_start, turn_end)
+        optimal_chunk_length = min(chunk_length, int(turn_end - turn_start + 1))
+        
+        # Transcribe segment
+        turn_result = perform_transcription(
+            pipeline=pipeline,
+            audio_data=turn_audio,
+            task=task_value,
+            language=language,
+            chunk_length=optimal_chunk_length,
+            batch_size=batch_size,
+        )
+        total_processing_time += turn_result.processing_time
+        
+        # Process chunks from this turn
+        for chunk in turn_result.chunks:
+            start_time, end_time = chunk["timestamp"]
+            logger.debug(f"Chunk timestamp: {chunk['timestamp']} (start={start_time}, end={end_time})")
+            
+            # Adjust timestamps
+            chunk["timestamp"] = adjust_timestamps(start_time, end_time, turn_start, turn_end)
+                
+            # Assign speaker
+            chunk["speaker"] = speaker
+            
+        # Add chunks to collection
+        all_chunks.extend(turn_result.chunks)
+    
+    # Sort chunks by start time
+    all_chunks.sort(key=lambda c: c["timestamp"][0])
+    
+    # Calculate metrics
+    audio_duration = audio["waveform"].shape[1] / audio["sample_rate"]
+    speed_factor = audio_duration / total_processing_time if total_processing_time > 0 else float("inf")
+    
+    # Create result
+    return TranscriptionResult(
+        text=" ".join(c["text"] for c in all_chunks),
+        chunks=all_chunks,
+        audio_duration=audio_duration,
+        processing_time=total_processing_time,
+        speed_factor=speed_factor,
+    )
+
+
+def adjust_timestamps(
+    start_time: Optional[float],
+    end_time: Optional[float], 
+    turn_start: float,
+    turn_end: float
+) -> Tuple[float, float]:
+    """
+    Adjust local timestamps to global timeline, handling None values safely.
+    
+    Args:
+        start_time: Local start time (can be None)
+        end_time: Local end time (can be None)
+        turn_start: Global start time of the containing turn
+        turn_end: Global end time of the containing turn
+        
+    Returns:
+        Tuple of adjusted (start_time, end_time) with None values handled
+    """
+    if end_time is None:
+        # If end time is None, use the end of the turn
+        return (
+            start_time + turn_start if start_time is not None else turn_start,
+            turn_end
+        )
+    elif start_time is None:
+        # If start time is None, use the start of the turn
+        return (turn_start, end_time + turn_start)
+    else:
+        # Normal case: adjust both timestamps
+        return (start_time + turn_start, end_time + turn_start)
+
+
+def export_results(
+    file_path: Path,
+    transcription_result: TranscriptionResult,
+    aligned_chunks: List[Dict[str, Any]],
+    formats: List[str],
+    logger: logging.Logger
+) -> None:
+    """
+    Export results in the requested formats.
+    
+    Args:
+        file_path: Original file path
+        transcription_result: Transcription result
+        aligned_chunks: Aligned chunks with speaker information
+        formats: List of output formats
+        logger: Logger instance
+    """
+    base_path = get_output_base_path(file_path, "process")
+    logger.info(MSG_SAVING_RESULTS, file_path.name)
+    
+    for fmt in formats:
+        fmt = fmt.lower()
+        if fmt == "json":
+            save_json(base_path, format_transcription_result(transcription_result))
+            logger.info(MSG_FILE_SAVED, "JSON", base_path.with_suffix(".json").name)
+        elif fmt in ("txt", "srt", "vtt"):
+            save_subtitles(
+                transcription_result,
+                base_path.with_suffix(f".{fmt}"),
+                fmt,
+                with_speaker=True,
+                chunks=aligned_chunks,
+            )
+            logger.info(MSG_FILE_SAVED, fmt.upper(), base_path.with_suffix(f".{fmt}").name)
+        else:
+            logger.warning(MSG_UNKNOWN_FORMAT, fmt)
+
+
+def diarize_file(
+    audio_path: Path,
+    command_name: str,
+    pipeline: Any,
+    num_speakers: Optional[int] = None,
+    device: Optional[str] = None,
+) -> tuple[DiarizationResult, Dict[str, Any]]:
+    """
+    Diarizes an audio or video file.
+
+    *Returns both* the diarization result and the loaded audio,
+    so that the caller (e.g., `process`) can reuse the audio
+    to avoid redundant loading.
+    """
+    audio = load_media(audio_path, device)
+    result = perform_diarization(pipeline, audio, num_speakers)
+
+    return result, audio
+
+
 def transcribe_file(
     audio_path: Path,
     command_name: str,
@@ -175,17 +436,17 @@ def transcribe_file(
     device: Optional[str] = None,
 ) -> TranscriptionResult:
     """
-    Transcribe un archivo de audio o video.
+    Transcribes an audio or video file.
 
-    Carga el medio con `load_media` y ejecuta la transcripción mediante
-    `perform_transcription`. Devuelve únicamente el resultado de la
-    transcripción; el audio ya cargado no se retorna porque, en el
-    comando simple `transcribe`, no se reutiliza.
+    Loads the media with `load_media` and runs transcription using
+    `perform_transcription`. Only returns the transcription result;
+    the loaded audio is not returned because it's not reused in the
+    simple `transcribe` command.
     """
     logger = logging.getLogger(f"wx3.{command_name}")
     logger.info(LOG_TRANSCRIBING, audio_path.name)
 
-    # Resumen de opciones
+    # Log options summary
     logger.info(LOG_TASK, task)
     logger.info(LOG_LANGUAGE, "Auto-detect" if language is None else language)
     logger.info(LOG_SEGMENT_BATCH, chunk_length, batch_size)
@@ -202,34 +463,8 @@ def transcribe_file(
     )
 
 
-def diarize_file(
-    audio_path: Path,
-    command_name: str,
-    pipeline: Any,
-    num_speakers: Optional[int] = None,
-    device: Optional[str] = None,
-) -> tuple[DiarizationResult, AudioData]:
-    """
-    Diariza un archivo de audio o video.
+# --- CLI Commands ---
 
-    *Devuelve tanto* el resultado de diarización como el audio cargado,
-    de modo que quien llame (p. ej. `process`) pueda reutilizar el audio
-    y evitar una lectura redundante.
-    """
-    logger = logging.getLogger(f"wx3.{command_name}")
-    logger.info(LOG_DIARIZING, audio_path.name)
-
-    logger.info(
-        LOG_NUM_SPEAKERS, "Auto-detect" if num_speakers is None else num_speakers
-    )
-
-    audio = load_media(audio_path, device)
-    result = perform_diarization(pipeline, audio, num_speakers)
-
-    return result, audio
-
-
-# CLI command implementations
 @app.command()
 def transcribe(
     audio_inputs: List[str] = typer.Argument(..., help=HELP_AUDIO_INPUTS),
@@ -246,34 +481,27 @@ def transcribe(
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
 ):
     """Transcribe audio/video files."""
-    # Configure logging
-    setup_logging(log_level, log_file)
-    logger = logging.getLogger("wx3.transcribe")
-    
-    # Show supported formats if requested
-    if show_formats:
-        show_supported_formats()
+    # Initial setup
+    files = setup_command(log_level, log_file, show_formats, audio_inputs)
+    if not files:
         return
     
-    # Expand and validate inputs
-    files = expand_audio_inputs(audio_inputs)
-    validate_inputs(files)
-    
     # Create pipeline
+    logger = logging.getLogger("wx3.transcribe")
     device_str = resolve_device(device)
-    logger.info(LOG_INIT_TRANSCRIPTION, model, device_str or 'auto')
+    logger.info(LOG_INIT_TRANSCRIPTION, model, device_str)
     pipeline = create_transcription_pipeline(model, device_str, attn_type)
     
-    total_files = len(files)
-    logger.info(MSG_PROCESSING_FILES, total_files)
+    # Process files
+    logger.info(MSG_PROCESSING_FILES, len(files))
     
-    for idx, audio_path in enumerate(files, start=1):
+    for file_idx, file_path in enumerate(files, start=1):
         try:
-            logger.info(MSG_PROCESSING_FILE, idx, total_files, audio_path.name)
+            logger.info(MSG_PROCESSING_FILE, file_idx, len(files), file_path.name)
             
-            # Ya no devolvemos audio, solo el resultado:
+            # Transcribe file
             result = transcribe_file(
-                audio_path=audio_path,
+                audio_path=file_path,
                 command_name="transcribe",
                 pipeline=pipeline,
                 task=task.value,
@@ -283,26 +511,28 @@ def transcribe(
                 device=device_str,
             )
 
-            # — Guardar resultados —
-            base = get_output_base_path(audio_path, "transcribe")
-            logger.info(MSG_SAVING_RESULTS, audio_path.name)
+            # Save results
+            base_path = get_output_base_path(file_path, "transcribe")
+            logger.info(MSG_SAVING_RESULTS, file_path.name)
+            
             for fmt in formats:
-                f = fmt.lower()
-                if f == "json":
-                    save_json(base, format_transcription_result(result))
-                    logger.info(MSG_FILE_SAVED, "JSON", base.with_suffix(".json").name)
-                elif f in ("txt", "srt", "vtt"):
-                    save_subtitles(result, base.with_suffix(f".{f}"), f)
-                    logger.info(MSG_FILE_SAVED, f.upper(), base.with_suffix(f".{f}").name)
+                fmt = fmt.lower()
+                if fmt == "json":
+                    save_json(base_path, format_transcription_result(result))
+                    logger.info(MSG_FILE_SAVED, "JSON", base_path.with_suffix(".json").name)
+                elif fmt in ("txt", "srt", "vtt"):
+                    save_subtitles(result, base_path.with_suffix(f".{fmt}"), fmt)
+                    logger.info(MSG_FILE_SAVED, fmt.upper(), base_path.with_suffix(f".{fmt}").name)
                 else:
                     logger.warning(MSG_UNKNOWN_FORMAT, fmt)
 
-        except Exception as e:
-            logger.error(MSG_ERROR_PROCESSING, audio_path.name, str(e))
-            logger.exception(e)
+        except Exception as exc:
+            logger.error(MSG_ERROR_PROCESSING, file_path.name, str(exc))
+            logger.exception(exc)
    
-    # Show loading times if requested
+    # Show loading times
     show_loading_times(logger)
+
 
 @app.command()
 def diarize(
@@ -316,58 +546,50 @@ def diarize(
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
 ):
     """Diarize audio/video files."""
-    # Configure logging
-    setup_logging(log_level, log_file)
-    logger = logging.getLogger("wx3.diarize")
-    
-    # Show supported formats if requested
-    if show_formats:
-        show_supported_formats()
+    # Initial setup
+    files = setup_command(log_level, log_file, show_formats, audio_inputs)
+    if not files:
         return
     
-    # Expand and validate inputs
-    files = expand_audio_inputs(audio_inputs)
-    validate_inputs(files)
-    
     # Create pipeline
+    logger = logging.getLogger("wx3.diarize")
     device_str = resolve_device(device)
-    logger.info(LOG_INIT_DIARIZATION, device_str or 'auto')
+    logger.info(LOG_INIT_DIARIZATION, device_str)
     pipeline = create_diarization_pipeline(hf_token, device_str)
     
-    total_files = len(files)
-    logger.info(MSG_PROCESSING_FILES, total_files)
+    # Process files
+    logger.info(MSG_PROCESSING_FILES, len(files))
     
-    for idx, audio_path in enumerate(files, 1):
+    for file_idx, file_path in enumerate(files, start=1):
         try:
-            logger.info(MSG_PROCESSING_FILE, idx, total_files, audio_path.name)
+            logger.info(MSG_PROCESSING_FILE, file_idx, len(files), file_path.name)
             
-            result, audio = diarize_file(
-                audio_path=audio_path,
-                command_name="diarize",
-                pipeline=pipeline,
-                num_speakers=num_speakers,
-                device=device_str
+            # Prepare diarization data (don't save intermediate results)
+            diar_segments, _ = prepare_diarization(
+                file_path, pipeline, num_speakers, device_str, logger, save_intermediate=False
             )
             
+            # Create full diarization result
+            diar_result = {"speakers": diar_segments}
+            
             # Save results
-            base = get_output_base_path(audio_path, "diarize")
-            logger.info(MSG_SAVING_RESULTS, audio_path.name)
+            base_path = get_output_base_path(file_path, "diarize")
+            logger.info(MSG_SAVING_RESULTS, file_path.name)
             
             for fmt in formats:
-                f = fmt.lower()
-                if f == "json":
-                    save_json(base, format_diarization_result(result))
-                    logger.info(MSG_FILE_SAVED, "JSON", base.with_suffix('.json').name)
+                fmt = fmt.lower()
+                if fmt == "json":
+                    save_json(base_path, diar_result)
+                    logger.info(MSG_FILE_SAVED, "JSON", base_path.with_suffix('.json').name)
                 else:
                     logger.warning(MSG_UNKNOWN_FORMAT, fmt)
                     
-        except Exception as e:
-            logger.error(MSG_ERROR_PROCESSING, audio_path.name, str(e))
-            logger.exception(e)
+        except Exception as exc:
+            logger.error(MSG_ERROR_PROCESSING, file_path.name, str(exc))
+            logger.exception(exc)
     
-    # Show loading times if requested
+    # Show loading times
     show_loading_times(logger)
-
 
 
 @app.command()
@@ -392,131 +614,66 @@ def process(
     log_file: Optional[str] = typer.Option(None, help=HELP_LOG_FILE),
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
     speaker_names: Optional[str] = typer.Option(
-        None, help="Lista separada por coma con nombres de hablantes para reemplazar SPEAKER_xx"
+        None, help="Comma-separated list of speaker names to replace SPEAKER_xx"
     )
 ):
     """
-    Pipeline combinado: diarización ➜ transcripción ➜ alineado/exportación.
-    Reutiliza el audio cargado en la etapa de diarización para evitar
-    una segunda lectura.
+    Combined pipeline: diarization → transcription → alignment/export.
+    Reuses audio loaded in the diarization stage to avoid a second read.
     """
-    # ───── Configuración inicial ─────
-    setup_logging(log_level, log_file)
-    logger = logging.getLogger("wx3.process")
-
-    if show_formats:
-        show_supported_formats()
+    # Setup command
+    files = setup_command(log_level, log_file, show_formats, audio_inputs)
+    if not files:
         return
-
-    files = expand_audio_inputs(audio_inputs)
-    validate_inputs(files)
-
+        
+    # Setup pipelines
+    logger = logging.getLogger("wx3.process")
     device_str = resolve_device(device)
     logger.info(LOG_INIT_PIPELINES, model, device_str or "auto")
-    pipe_d = create_diarization_pipeline(hf_token, device_str)
-    pipe_t = create_transcription_pipeline(model, device_str, attn_type)
-
+    
+    diar_pipeline = create_diarization_pipeline(hf_token, device_str)
+    trans_pipeline = create_transcription_pipeline(model, device_str, attn_type)
+    
+    # Process files
     logger.info(MSG_PROCESSING_FILES, len(files))
-
-    for idx_file, audio_path in enumerate(files, start=1):
-        logger.info(MSG_PROCESSING_FILE, idx_file, len(files), audio_path.name)
+    
+    for file_idx, file_path in enumerate(files, start=1):
+        logger.info(MSG_PROCESSING_FILE, file_idx, len(files), file_path.name)
+        
         try:
-            # ───── 1 · DIARIZACIÓN ─────
-            dres, audio_full = diarize_file(
-                audio_path, "diarize", pipe_d, num_speakers, device_str
+            # 1. Diarization
+            diar_segments, audio = prepare_diarization(
+                file_path, diar_pipeline, num_speakers, device_str, logger, save_intermediate=True
             )
-            diar_segments = format_diarization_result(dres)["speakers"]
-            base_d = get_output_base_path(
-                audio_path, "process", "diarize", "intermediate"
+            
+            # 2. Transcription by turns
+            trans_result = transcribe_by_speaker_turns(
+                diar_segments, audio, trans_pipeline, task.value, lang, 
+                chunk_length, batch_size, logger
             )
-            save_json(base_d, format_diarization_result(dres))
-
-            # ───── 2 · TRANSCRIPCIÓN POR TURNOS ─────
-            turns_dicts = [
-                {"start": s["start"], "end": s["end"], "speaker": s["speaker"]}
-                for s in diar_segments
-            ]
-            grouped = group_turns_by_speaker(turns_dicts)
-
-            all_chunks: List[Dict[str, Any]] = []
-            total_proc_time = 0.0
-
-            for seg in grouped:
-                t_start, t_end, spk = seg["start"], seg["end"], seg["speaker"]
-                seg_audio = slice_audio(audio_full, t_start, t_end)
-
-                seg_res = perform_transcription(
-                    pipeline=pipe_t,
-                    audio_data=seg_audio,
-                    task=task.value,
-                    language=lang,
-                    chunk_length=min(chunk_length, int(t_end - t_start + 1)),
-                    batch_size=batch_size,
-                )
-                total_proc_time += seg_res.processing_time
-
-                for ch in seg_res.chunks:
-                    st, et = ch["timestamp"]
-                    ch["timestamp"] = (st + t_start, et + t_start)
-                    ch["speaker"] = spk
-                all_chunks.extend(seg_res.chunks)
-
-            all_chunks.sort(key=lambda c: c["timestamp"][0])
-
-            audio_dur = (
-                audio_full["waveform"].shape[1] / audio_full["sample_rate"]
-            )
-            speed = audio_dur / total_proc_time if total_proc_time > 0 else float("inf")
-
-            tres = TranscriptionResult(
-                text=" ".join(c["text"] for c in all_chunks),
-                chunks=all_chunks,
-                audio_duration=audio_dur,
-                processing_time=total_proc_time,
-                speed_factor=speed,
-            )
-            base_t = get_output_base_path(
-                audio_path, "process", "transcribe", "intermediate"
-            )
-            save_json(base_t, format_transcription_result(tres))
-
-            # ───── 3 · (OPCIONAL) ALINEADO ─────
-            aligned_chunks = align_diarization_with_transcription(
-                diar_segments, tres.chunks
-            )
-
+            
+            # Save intermediate transcription
+            base_t = get_output_base_path(file_path, "process", "transcribe", "intermediate")
+            save_json(base_t, format_transcription_result(trans_result))
+            logger.info(f"Intermediate transcription saved: {base_t.with_suffix('.json').name}")
+            
+            # 3. Alignment
+            aligned_chunks = align_diarization_with_transcription(diar_segments, trans_result.chunks)
+            
+            # 4. Apply speaker names if provided
             if speaker_names:
                 names_list = [name.strip() for name in speaker_names.split(",")]
                 apply_speaker_names(aligned_chunks, names_list)
-
-            # ───── 4 · EXPORTACIÓN FINAL ─────
-            base_p = get_output_base_path(audio_path, "process")
-            for fmt in formats:
-                f = fmt.lower()
-                if f == "json":
-                    save_json(base_p, format_transcription_result(tres))
-                    logger.info(MSG_FILE_SAVED, "JSON", base_p.with_suffix(".json").name)
-                elif f in ("txt", "srt", "vtt"):
-                    save_subtitles(
-                        tres,
-                        base_p.with_suffix(f".{f}"),
-                        f,
-                        with_speaker=True,
-                        chunks=aligned_chunks,
-                    )
-                    logger.info(
-                        MSG_FILE_SAVED, f.upper(), base_p.with_suffix(f".{f}").name
-                    )
-                else:
-                    logger.warning(MSG_UNKNOWN_FORMAT, fmt)
-
-        except Exception as exc:  # noqa: WPS424 – registro de excepción amplia
-            logger.error(MSG_ERROR_PROCESSING, audio_path.name, exc)
+                
+            # 5. Export results
+            export_results(file_path, trans_result, aligned_chunks, formats, logger)
+            
+        except Exception as exc:
+            logger.error(MSG_ERROR_PROCESSING, file_path.name, exc)
             logger.exception(exc)
-            continue
-
+            
+    # Show loading times
     show_loading_times(logger)
-
 
 
 if __name__ == "__main__":
