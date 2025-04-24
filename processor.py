@@ -15,7 +15,6 @@ from constants import (
 )
 from diarization import (
     DiarizationResult,
-    create_pipeline as create_diarization_pipeline,
     format_diarization_result,
     perform_diarization,
 )
@@ -23,7 +22,6 @@ from input_media import load_media
 from output_formatters import save_json, save_subtitles
 from transcription import (
     TranscriptionResult,
-    create_pipeline as create_transcription_pipeline,
     format_transcription_result,
     perform_transcription,
 )
@@ -35,7 +33,8 @@ def prepare_diarization(
     num_speakers: Optional[int],
     device_str: Optional[str],
     logger: logging.Logger,
-    save_intermediate: bool = False
+    save_intermediate: bool = False,
+    use_cache: bool = True
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Prepara los datos de diarización para un archivo.
@@ -47,6 +46,7 @@ def prepare_diarization(
         device_str: String del dispositivo
         logger: Instancia del logger
         save_intermediate: Si se deben guardar resultados intermedios
+        use_cache: Si se debe usar el sistema de caché para audio
         
     Returns:
         Tupla de (segmentos de diarización, audio cargado)
@@ -59,7 +59,8 @@ def prepare_diarization(
         audio_path=file_path,
         pipeline=pipeline,
         num_speakers=num_speakers,
-        device=device_str
+        device=device_str,
+        use_cache=use_cache
     )
     
     # Extraer segmentos del resultado
@@ -106,10 +107,7 @@ def transcribe_by_speaker_turns(
     logger.info(LOG_SEGMENT_BATCH, chunk_length, batch_size)
     
     # Extraer segmentos de hablante y agrupar por hablante
-    speaker_segments = [
-        {"start": seg["start"], "end": seg["end"], "speaker": seg["speaker"]}
-        for seg in diar_segments
-    ]
+    speaker_segments = extract_speaker_segments(diar_segments)
     grouped_turns = group_turns_by_speaker(speaker_segments)
     
     # Procesar cada turno
@@ -124,7 +122,7 @@ def transcribe_by_speaker_turns(
         
         # Procesar segmento de audio
         turn_audio = slice_audio(audio, turn_start, turn_end)
-        optimal_chunk_length = min(chunk_length, int(turn_end - turn_start + 1))
+        optimal_chunk_length = optimize_chunk_length(turn_end - turn_start, chunk_length)
         
         # Transcribir segmento
         turn_result = perform_transcription(
@@ -138,18 +136,12 @@ def transcribe_by_speaker_turns(
         total_processing_time += turn_result.processing_time
         
         # Procesar chunks de este turno
-        for chunk in turn_result.chunks:
-            start_time, end_time = chunk["timestamp"]
-            logger.debug(f"Timestamp del chunk: {chunk['timestamp']} (inicio={start_time}, fin={end_time})")
-            
-            # Ajustar timestamps
-            chunk["timestamp"] = adjust_timestamps(start_time, end_time, turn_start, turn_end)
-                
-            # Asignar hablante
-            chunk["speaker"] = speaker
-            
+        processed_chunks = process_turn_chunks(
+            turn_result.chunks, turn_start, turn_end, speaker, logger
+        )
+        
         # Añadir chunks a la colección
-        all_chunks.extend(turn_result.chunks)
+        all_chunks.extend(processed_chunks)
     
     # Ordenar chunks por tiempo de inicio
     all_chunks.sort(key=lambda c: c["timestamp"][0] if c["timestamp"][0] is not None else 0)
@@ -166,6 +158,47 @@ def transcribe_by_speaker_turns(
         processing_time=total_processing_time,
         speed_factor=speed_factor,
     )
+
+
+def extract_speaker_segments(
+    diar_segments: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Extrae segmentos de hablante desde la diarización."""
+    return [
+        {"start": seg["start"], "end": seg["end"], "speaker": seg["speaker"]}
+        for seg in diar_segments
+    ]
+
+
+def optimize_chunk_length(
+    turn_duration: float, 
+    max_chunk_length: int
+) -> int:
+    """Optimiza longitud de chunk basado en duración del turno."""
+    return min(max_chunk_length, max(1, int(turn_duration + 0.5)))
+
+
+def process_turn_chunks(
+    chunks: List[Dict[str, Any]],
+    turn_start: float,
+    turn_end: float, 
+    speaker: str,
+    logger: logging.Logger
+) -> List[Dict[str, Any]]:
+    """Procesa chunks de un turno ajustando timestamps y asignando hablante."""
+    processed = []
+    for chunk in chunks:
+        start_time, end_time = chunk["timestamp"]
+        logger.debug(f"Timestamp del chunk: {chunk['timestamp']} (inicio={start_time}, fin={end_time})")
+        
+        # Ajustar timestamps
+        chunk["timestamp"] = adjust_timestamps(start_time, end_time, turn_start, turn_end)
+        
+        # Asignar hablante
+        chunk["speaker"] = speaker
+        processed.append(chunk)
+        
+    return processed
 
 
 def adjust_timestamps(
@@ -243,14 +276,26 @@ def diarize_file(
     pipeline: Any,
     num_speakers: Optional[int] = None,
     device: Optional[str] = None,
+    use_cache: bool = True
 ) -> tuple[DiarizationResult, Dict[str, Any]]:
     """
     Diariza un archivo de audio o video.
 
     *Devuelve tanto* el resultado de diarización como el audio cargado,
     para que el llamador pueda reutilizar el audio y evitar carga redundante.
+    
+    Args:
+        audio_path: Ruta al archivo de audio o video
+        pipeline: Pipeline de diarización
+        num_speakers: Número de hablantes (opcional)
+        device: Dispositivo para procesamiento (opcional)
+        use_cache: Si se debe usar el sistema de caché para audio
+    
+    Returns:
+        Tupla de (resultado de diarización, audio cargado)
     """
-    audio = load_media(audio_path, device)
+    # Usar caché de audio si está habilitado
+    audio = load_media(audio_path, device, use_cache=use_cache)
     result = perform_diarization(pipeline, audio, num_speakers)
 
     return result, audio
@@ -265,12 +310,27 @@ def transcribe_file(
     batch_size: int = DEFAULT_BATCH_SIZE,
     device: Optional[str] = None,
     logger: Optional[logging.Logger] = None,
+    use_cache: bool = True
 ) -> TranscriptionResult:
     """
     Transcribe un archivo de audio o video.
 
     Carga el medio con `load_media` y ejecuta la transcripción usando
     `perform_transcription`.
+    
+    Args:
+        audio_path: Ruta al archivo de audio o video
+        pipeline: Pipeline de transcripción
+        task: Tarea a realizar (transcribe/translate)
+        language: Código de idioma (opcional)
+        chunk_length: Longitud de chunk en segundos
+        batch_size: Tamaño de batch
+        device: Dispositivo para procesamiento (opcional)
+        logger: Logger personalizado (opcional)
+        use_cache: Si se debe usar el sistema de caché para audio
+        
+    Returns:
+        Resultado de transcripción
     """
     logger = logger or logging.getLogger("wx3.transcribe")
     logger.info(LOG_TRANSCRIBING, audio_path.name)
@@ -280,7 +340,8 @@ def transcribe_file(
     logger.info(LOG_LANGUAGE, "Auto-detect" if language is None else language)
     logger.info(LOG_SEGMENT_BATCH, chunk_length, batch_size)
 
-    audio = load_media(audio_path, device)
+    # Usar caché de audio si está habilitado
+    audio = load_media(audio_path, device, use_cache=use_cache)
 
     return perform_transcription(
         pipeline,
@@ -320,7 +381,8 @@ def process_file(
     device_str: Optional[str] = None,
     speaker_names: Optional[List[str]] = None,
     logger: Optional[logging.Logger] = None,
-    save_intermediate: bool = False
+    save_intermediate: bool = False,
+    use_cache: bool = True
 ) -> Dict[str, Any]:
     """
     Procesa un archivo con diarización y transcripción.
@@ -339,6 +401,7 @@ def process_file(
         speaker_names: Nombres de hablantes personalizados (opcional)
         logger: Logger personalizado (opcional)
         save_intermediate: Si se deben guardar resultados intermedios
+        use_cache: Si se debe usar el sistema de caché para audio
         
     Returns:
         Diccionario con resultados del procesamiento
@@ -348,7 +411,7 @@ def process_file(
     # 1. Diarización
     diar_segments, audio = prepare_diarization(
         file_path, diar_pipeline, num_speakers, device_str, logger, 
-        save_intermediate=save_intermediate
+        save_intermediate=save_intermediate, use_cache=use_cache
     )
     
     # 2. Transcripción

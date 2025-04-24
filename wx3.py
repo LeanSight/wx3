@@ -19,19 +19,29 @@ from processor import (
     get_output_base_path
 )
 
+# Importar del nuevo módulo pipelines.py para obtención cacheada de pipelines
+from pipelines import (
+    get_transcription_pipeline,
+    get_diarization_pipeline,
+    get_pipeline_cache_info,
+    clear_pipeline_cache
+)
+
 from transcription import (
     TranscriptionResult,
-    create_pipeline as create_transcription_pipeline,
     format_transcription_result,
 )
 from diarization import (
     DiarizationResult,
-    create_pipeline as create_diarization_pipeline,
     format_diarization_result,
 )
 from lazy_loading import get_loading_times
 from output_formatters import save_json, save_subtitles
-from input_media import get_supported_extensions
+from input_media import (
+    get_supported_extensions,
+    get_cache_info as get_audio_cache_info,
+    clear_audio_cache
+)
 
 # Types for annotations
 T = TypeVar('T')
@@ -47,12 +57,11 @@ app = typer.Typer(
 )
 
 # Centralized utility functions
-import torch
-from constants import Device
+from lazy_loading import lazy_load
 
 def resolve_device(device: Device) -> str:
     """
-    Resolves a Device enum value to a torch.device instance.
+    Resolves a Device enum value to a device string compatible with PyTorch.
 
     Args:
         device: Enum value indicating the desired device.
@@ -63,6 +72,9 @@ def resolve_device(device: Device) -> str:
     Raises:
         ValueError: If the enum value is not recognized or not supported.
     """
+    # Cargar torch sólo cuando sea necesario
+    torch = lazy_load("torch", "")
+    
     match device:
         case Device.auto:
             return "cuda" if torch.cuda.is_available() else "cpu"
@@ -98,8 +110,14 @@ def expand_audio_inputs(inputs: List[str]) -> List[Path]:
 
 def show_supported_formats() -> None:
     """Shows information about supported formats in the command help."""
+    # Cargar rich sólo cuando sea necesario
+    rich_console = lazy_load("rich.console", "Console")
+    rich_panel = lazy_load("rich.panel", "Panel")
+    
+    console = rich_console()
     formats_info = get_supported_extensions()
-    console.print(Panel(
+    
+    console.print(rich_panel.Panel(
         "\n".join([
             f"[bold cyan]{PANEL_SUPPORTED_FORMATS}[/]",
             f"[yellow]{PANEL_AUDIO_FORMATS.format(', '.join(formats_info['audio']))}[/]",
@@ -221,6 +239,29 @@ def diarize_file(
     )
 
 
+def show_cache_info(logger: logging.Logger) -> None:
+    """
+    Muestra información sobre el estado de las cachés.
+    
+    Args:
+        logger: Logger para registrar la información
+    """
+    # Información de caché de pipelines
+    pipeline_cache = get_pipeline_cache_info()
+    logger.info("== Estadísticas de caché de pipelines ==")
+    
+    for pipeline_type, info in pipeline_cache.items():
+        logger.info(f"Pipeline de {pipeline_type}:")
+        logger.info(f"  Hits: {info['hits']}, Misses: {info['misses']}")
+        logger.info(f"  Tamaño actual: {info['currsize']}/{info['maxsize']}")
+    
+    # Información de caché de audio
+    audio_cache = get_audio_cache_info()
+    logger.info("== Estadísticas de caché de audio ==")
+    logger.info(f"Entradas: {audio_cache['entries']}/{audio_cache['max_entries']}")
+    logger.info(f"Tamaño: {audio_cache['size_mb']:.2f}MB/{audio_cache['max_size_mb']:.2f}MB ({audio_cache['usage_percent']:.1f}%)")
+
+
 # --- CLI Commands ---
 
 @app.command()
@@ -237,6 +278,7 @@ def transcribe(
     log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-l", help=HELP_LOG_LEVEL),
     log_file: Optional[str] = typer.Option(None, help=HELP_LOG_FILE),
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Desactiva el uso de caché"),
 ):
     """Transcribe audio/video files."""
     # Initial setup
@@ -244,11 +286,12 @@ def transcribe(
     if not files:
         return
     
-    # Create pipeline
+    # Create pipeline using cached function
     logger = logging.getLogger("wx3.transcribe")
     device_str = resolve_device(device)
-    logger.info(LOG_INIT_TRANSCRIPTION, model, device_str)
-    pipeline = create_transcription_pipeline(model, device_str, attn_type)
+    
+    # CAMBIO: Usar la función cacheada en lugar de crear directamente
+    pipeline = get_transcription_pipeline(model, device_str, attn_type)
     
     # Process files
     logger.info(MSG_PROCESSING_FILES, len(files))
@@ -290,6 +333,10 @@ def transcribe(
    
     # Show loading times
     show_loading_times(logger)
+    
+    # NUEVO: Mostrar información de caché si está habilitada
+    if not no_cache:
+        show_cache_info(logger)
 
 
 @app.command()
@@ -302,6 +349,7 @@ def diarize(
     log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-l", help=HELP_LOG_LEVEL),
     log_file: Optional[str] = typer.Option(None, help=HELP_LOG_FILE),
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Desactiva el uso de caché"),
 ):
     """Diarize audio/video files."""
     # Initial setup
@@ -309,11 +357,12 @@ def diarize(
     if not files:
         return
     
-    # Create pipeline
+    # Create pipeline using cached function
     logger = logging.getLogger("wx3.diarize")
     device_str = resolve_device(device)
-    logger.info(LOG_INIT_DIARIZATION, device_str)
-    pipeline = create_diarization_pipeline(hf_token, device_str)
+    
+    # CAMBIO: Usar la función cacheada en lugar de crear directamente
+    pipeline = get_diarization_pipeline(hf_token, device_str)
     
     # Process files
     logger.info(MSG_PROCESSING_FILES, len(files))
@@ -355,6 +404,10 @@ def diarize(
     
     # Show loading times
     show_loading_times(logger)
+    
+    # NUEVO: Mostrar información de caché si está habilitada
+    if not no_cache:
+        show_cache_info(logger)
 
 
 @app.command()
@@ -380,7 +433,8 @@ def process(
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
     speaker_names: Optional[str] = typer.Option(
         None, help="Comma-separated list of speaker names to replace SPEAKER_xx"
-    )
+    ),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Desactiva el uso de caché"),
 ):
     """
     Combined pipeline: diarization → transcription → alignment/export.
@@ -391,13 +445,13 @@ def process(
     if not files:
         return
         
-    # Setup pipelines
+    # Setup pipelines using cached functions
     logger = logging.getLogger("wx3.process")
     device_str = resolve_device(device)
-    logger.info(LOG_INIT_PIPELINES, model, device_str or "auto")
     
-    diar_pipeline = create_diarization_pipeline(hf_token, device_str)
-    trans_pipeline = create_transcription_pipeline(model, device_str, attn_type)
+    # CAMBIO: Usar funciones cacheadas en lugar de crear directamente
+    diar_pipeline = get_diarization_pipeline(hf_token, device_str)
+    trans_pipeline = get_transcription_pipeline(model, device_str, attn_type)
     
     # Process files
     logger.info(MSG_PROCESSING_FILES, len(files))
@@ -411,7 +465,7 @@ def process(
         try:
             logger.info(MSG_PROCESSING_FILE, file_idx, len(files), file_path.name)
             
-            # Usar la nueva función process_file de processor.py
+            # Usar la función process_file de processor.py
             process_file(
                 file_path=file_path,
                 diar_pipeline=diar_pipeline,
@@ -434,6 +488,55 @@ def process(
             
     # Show loading times
     show_loading_times(logger)
+    
+    # NUEVO: Mostrar información de caché si está habilitada
+    if not no_cache:
+        show_cache_info(logger)
+
+
+# NUEVO: Comando para limpiar y gestionar las cachés
+@app.command()
+def manage_cache(
+    clear_all: bool = typer.Option(False, "--clear-all", help="Limpia todas las cachés"),
+    clear_pipelines: bool = typer.Option(False, "--clear-pipelines", help="Limpia la caché de pipelines"),
+    clear_audio: bool = typer.Option(False, "--clear-audio", help="Limpia la caché de audio"),
+    show_info: bool = typer.Option(True, "--info/--no-info", help="Muestra información de caché"),
+    max_audio_size_mb: Optional[int] = typer.Option(None, "--max-audio-size", help="Configura el tamaño máximo de caché de audio en MB"),
+    max_audio_entries: Optional[int] = typer.Option(None, "--max-audio-entries", help="Configura el número máximo de entradas en caché de audio"),
+    log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-l", help=HELP_LOG_LEVEL),
+):
+    """
+    Gestiona las cachés de la aplicación.
+    
+    Permite limpiar y configurar las cachés de pipelines y audio.
+    """
+    # Configurar logging
+    setup_logging(log_level, None)
+    logger = logging.getLogger("wx3.cache")
+    
+    # Aplicar acciones de limpieza
+    if clear_all or clear_pipelines:
+        clear_pipeline_cache()
+        logger.info("Caché de pipelines limpiada")
+        
+    if clear_all or clear_audio:
+        clear_audio_cache()
+        logger.info("Caché de audio limpiada")
+    
+    # Configurar caché de audio si se especifican opciones
+    if max_audio_size_mb is not None:
+        from input_media import set_max_cache_size
+        set_max_cache_size(max_audio_size_mb * 1024 * 1024)
+        logger.info(f"Tamaño máximo de caché de audio configurado a {max_audio_size_mb}MB")
+    
+    if max_audio_entries is not None:
+        from input_media import set_max_cache_entries
+        set_max_cache_entries(max_audio_entries)
+        logger.info(f"Número máximo de entradas en caché de audio configurado a {max_audio_entries}")
+    
+    # Mostrar información de caché si se solicita
+    if show_info:
+        show_cache_info(logger)
 
 
 if __name__ == "__main__":
