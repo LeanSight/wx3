@@ -276,11 +276,24 @@ def transcribe(
     device: Device = typer.Option(Device.auto, help=HELP_DEVICE),
     formats: List[str] = typer.Option(DEFAULT_FORMATS["transcribe"], "--format", "-f", help=HELP_FORMATS, case_sensitive=False),
     log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-l", help=HELP_LOG_LEVEL),
+    debug: bool = typer.Option(False, "--debug", "-dbg", help="Activa modo debug (equivale a --log-level DEBUG)"),
     log_file: Optional[str] = typer.Option(None, help=HELP_LOG_FILE),
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
-    no_cache: bool = typer.Option(False, "--no-cache", help="Desactiva el uso de caché"),
+    no_cache: bool = typer.Option(False, "--no-cache", help="Desactiva el uso de caché")
 ):
     """Transcribe audio/video files."""
+    # If debug flag is set, override log_level
+    if debug:
+        log_level = LogLevel.DEBUG
+        
+    # If debug flag is set, override log_level
+    if debug:
+        log_level = LogLevel.DEBUG
+        
+    # If debug flag is set, override log_level
+    if debug:
+        log_level = LogLevel.DEBUG
+        
     # Initial setup
     files = setup_command(log_level, log_file, show_formats, audio_inputs)
     if not files:
@@ -350,8 +363,13 @@ def diarize(
     log_file: Optional[str] = typer.Option(None, help=HELP_LOG_FILE),
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
     no_cache: bool = typer.Option(False, "--no-cache", help="Desactiva el uso de caché"),
+    debug: bool = typer.Option(False, "--debug", "-dbg", help="Activa modo debug (equivale a --log-level DEBUG)"),
 ):
     """Diarize audio/video files."""
+    # If debug flag is set, override log_level
+    if debug:
+        log_level = LogLevel.DEBUG
+        
     # Initial setup
     files = setup_command(log_level, log_file, show_formats, audio_inputs)
     if not files:
@@ -435,11 +453,16 @@ def process(
         None, help="Comma-separated list of speaker names to replace SPEAKER_xx"
     ),
     no_cache: bool = typer.Option(False, "--no-cache", help="Desactiva el uso de caché"),
+    debug: bool = typer.Option(False, "--debug", "-dbg", help="Activa modo debug (equivale a --log-level DEBUG)"),
 ):
     """
     Combined pipeline: diarization → transcription → alignment/export.
     Reuses audio loaded in the diarization stage to avoid a second read.
     """
+    # If debug flag is set, override log_level
+    if debug:
+        log_level = LogLevel.DEBUG
+        
     # Setup command
     files = setup_command(log_level, log_file, show_formats, audio_inputs)
     if not files:
@@ -504,12 +527,21 @@ def manage_cache(
     max_audio_size_mb: Optional[int] = typer.Option(None, "--max-audio-size", help="Configura el tamaño máximo de caché de audio en MB"),
     max_audio_entries: Optional[int] = typer.Option(None, "--max-audio-entries", help="Configura el número máximo de entradas en caché de audio"),
     log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-l", help=HELP_LOG_LEVEL),
+    debug: bool = typer.Option(False, "--debug", "-dbg", help="Activa modo debug (equivale a --log-level DEBUG)"),
 ):
     """
     Gestiona las cachés de la aplicación.
     
     Permite limpiar y configurar las cachés de pipelines y audio.
     """
+    # If debug flag is set, override log_level
+    if debug:
+        log_level = LogLevel.DEBUG
+        
+    # If debug flag is set, override log_level
+    if debug:
+        log_level = LogLevel.DEBUG
+        
     # Configurar logging
     setup_logging(log_level, None)
     logger = logging.getLogger("wx3.cache")
