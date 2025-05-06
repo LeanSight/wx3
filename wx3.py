@@ -458,7 +458,7 @@ def process(
     Reuses audio loaded in the diarization stage to avoid a second read.
     """
     # If debug flag is set, override log_level
-    if debug:
+    if log_level == "DEBUG":
         log_level = LogLevel.DEBUG
         
     # Setup command
