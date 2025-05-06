@@ -3,9 +3,8 @@
 
 import logging
 import time
-from typing import Any, Dict, List, TypedDict, Tuple
+from typing import Any, Dict, List, TypedDict, Tuple, Optional
 from dataclasses import dataclass
-from pathlib import Path
 
 from lazy_loading import lazy_load
 from constants import DEFAULT_DIARIZATION_MODEL
@@ -54,16 +53,9 @@ class nullcontext:
         pass
 
 
-def create_pipeline(token: str, device: str | None = None) -> Any:
+def create_pipeline(token: str, device: Optional[str] = None) -> Any:
     """
     Crea y devuelve un pipeline de diarización.
-
-    Args:
-        token: Token de acceso de Hugging Face
-        device: Dispositivo para inferencia ('cuda', 'cpu', o None para auto)
-
-    Returns:
-        Pipeline configurado para diarización
     """
     Pipeline = lazy_load("pyannote.audio", "Pipeline")
     torch = lazy_load("torch", "")
@@ -77,21 +69,16 @@ def create_pipeline(token: str, device: str | None = None) -> Any:
     return pipeline
 
 
-def create_embedding_pipeline(token: str, device: str | None = None) -> Any:
+def create_embedding_pipeline(token: str, device: Optional[str] = None) -> Any:
     """
     Crea y devuelve un pipeline de extracción de embeddings de speaker.
 
-    Args:
-        token: Token de acceso de Hugging Face
-        device: Dispositivo para inferencia ('cuda', 'cpu', o None para auto)
-
-    Returns:
-        Pipeline configurado para embeddings
+    Ahora utiliza la misma clase Pipeline de pyannote.audio para cargar
+    el modelo de embeddings.
     """
-    # Importar desde el submódulo correcto
-    SpeakerEmbedding = lazy_load("pyannote.audio.pipelines.speaker_embedding", "SpeakerEmbedding")
+    Pipeline = lazy_load("pyannote.audio", "Pipeline")
     torch = lazy_load("torch", "")
-    embedder = SpeakerEmbedding.from_pretrained(
+    embedder = Pipeline.from_pretrained(
         EMBEDDING_MODEL,
         use_auth_token=token
     )
@@ -104,34 +91,20 @@ def create_embedding_pipeline(token: str, device: str | None = None) -> Any:
 def perform_diarization(
     pipeline: Any,
     audio_data: Dict[str, Any],
-    num_speakers: int | None = None,
+    num_speakers: Optional[int] = None,
     progress_hook: Any | None = None,
     hf_token: str = ""
 ) -> DiarizationResult:
     """
     Realiza la diarización y extracción de embeddings en los datos de audio.
-
-    Args:
-        pipeline: Pipeline de diarización configurado
-        audio_data: Datos de audio (waveform, sample_rate)
-        num_speakers: Número de locutores (opcional)
-        progress_hook: Callback de progreso (opcional)
-        hf_token: Token de HF para el pipeline de embeddings
-
-    Returns:
-        Resultado de diarización con métricas y embeddings por segmento
     """
-    # Preparar args
     args = {"num_speakers": num_speakers} if num_speakers else {}
-
-    # ProgressHook
     if progress_hook is None:
         Hook = lazy_load("pyannote.audio.pipelines.utils.hook", "ProgressHook")
         hook = Hook()
     else:
         hook = progress_hook
 
-    # Ejecutar diarización
     start_time = time.time()
     ctx = hook if hasattr(hook, "__enter__") else nullcontext(hook)
     with ctx as h:
@@ -146,7 +119,6 @@ def perform_diarization(
         audio_duration, processing_time, speed_factor
     )
 
-    # Extraer embeddings siempre
     embedder = create_embedding_pipeline(hf_token)
     segments: List[Tuple[Any, str, List[float]]] = []
     for segment, _, speaker in diarization.itertracks(yield_label=True):
@@ -169,13 +141,6 @@ def format_diarization_result(
 ) -> DiarizationInfo:
     """
     Formatea la información de diarización para JSON.
-
-    Args:
-        audio_path: Ruta al archivo (solo para clave de embedding)
-        result: Resultado de diarización
-
-    Returns:
-        Dict con métricas y lista de segmentos con embeddings
     """
     metrics: DiarizationMetrics = {
         "audio_duration": round(result.audio_duration, 2),
