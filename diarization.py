@@ -3,7 +3,7 @@
 
 import logging
 import time
-from typing import Any, Callable, Dict, List, TypedDict, Tuple, Optional
+from typing import Any, Dict, List, TypedDict, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,7 +54,7 @@ class nullcontext:
         pass
 
 
-def create_pipeline(token: str, device: Optional[str] = None) -> Any:
+def create_pipeline(token: str, device: str | None = None) -> Any:
     """
     Crea y devuelve un pipeline de diarización.
 
@@ -77,7 +77,7 @@ def create_pipeline(token: str, device: Optional[str] = None) -> Any:
     return pipeline
 
 
-def create_embedding_pipeline(token: str, device: Optional[str] = None) -> Any:
+def create_embedding_pipeline(token: str, device: str | None = None) -> Any:
     """
     Crea y devuelve un pipeline de extracción de embeddings de speaker.
 
@@ -88,7 +88,8 @@ def create_embedding_pipeline(token: str, device: Optional[str] = None) -> Any:
     Returns:
         Pipeline configurado para embeddings
     """
-    SpeakerEmbedding = lazy_load("pyannote.audio.pipelines", "SpeakerEmbedding")
+    # Importar desde el submódulo correcto
+    SpeakerEmbedding = lazy_load("pyannote.audio.pipelines.speaker_embedding", "SpeakerEmbedding")
     torch = lazy_load("torch", "")
     embedder = SpeakerEmbedding.from_pretrained(
         EMBEDDING_MODEL,
@@ -103,8 +104,8 @@ def create_embedding_pipeline(token: str, device: Optional[str] = None) -> Any:
 def perform_diarization(
     pipeline: Any,
     audio_data: Dict[str, Any],
-    num_speakers: Optional[int] = None,
-    progress_hook: Optional[Callable] = None,
+    num_speakers: int | None = None,
+    progress_hook: Any | None = None,
     hf_token: str = ""
 ) -> DiarizationResult:
     """
@@ -120,29 +121,32 @@ def perform_diarization(
     Returns:
         Resultado de diarización con métricas y embeddings por segmento
     """
-    pipeline_args = {"num_speakers": num_speakers} if num_speakers else {}
+    # Preparar args
+    args = {"num_speakers": num_speakers} if num_speakers else {}
 
+    # ProgressHook
     if progress_hook is None:
-        hooks = lazy_load("pyannote.audio.pipelines.utils.hook", "ProgressHook")
-        hook = hooks()
+        Hook = lazy_load("pyannote.audio.pipelines.utils.hook", "ProgressHook")
+        hook = Hook()
     else:
         hook = progress_hook
 
+    # Ejecutar diarización
     start_time = time.time()
     ctx = hook if hasattr(hook, "__enter__") else nullcontext(hook)
     with ctx as h:
-        diarization = pipeline(audio_data, hook=h, **pipeline_args)
-    end_time = time.time()
+        diarization = pipeline(audio_data, hook=h, **args)
+    processing_time = time.time() - start_time
 
-    processing_time = end_time - start_time
     audio_duration = audio_data["waveform"].shape[1] / audio_data["sample_rate"]
-    speed_factor = audio_duration / processing_time if processing_time > 0 else float('inf')
+    speed_factor = audio_duration / processing_time if processing_time else float('inf')
 
     logger.info(
         "Diarización: %.2fs audio, %.2fs proceso (×%.2f)",
         audio_duration, processing_time, speed_factor
     )
 
+    # Extraer embeddings siempre
     embedder = create_embedding_pipeline(hf_token)
     segments: List[Tuple[Any, str, List[float]]] = []
     for segment, _, speaker in diarization.itertracks(yield_label=True):
@@ -180,7 +184,6 @@ def format_diarization_result(
     }
 
     speakers: List[SpeakerSegment] = []
-    base = Path(audio_path).stem
     for segment, speaker, emb in result.segments:
         speakers.append({
             "start": segment.start,
