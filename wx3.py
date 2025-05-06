@@ -275,7 +275,7 @@ def transcribe(
     attn_type: str = typer.Option(DEFAULT_ATTN_TYPE, help=HELP_ATTN_TYPE),
     device: Device = typer.Option(Device.auto, help=HELP_DEVICE),
     formats: List[str] = typer.Option(DEFAULT_FORMATS["transcribe"], "--format", "-f", help=HELP_FORMATS, case_sensitive=False),
-    log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-l", help=HELP_LOG_LEVEL),
+    log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-dbg", help=HELP_LOG_LEVEL),
     debug: bool = typer.Option(False, "--debug", "-dbg", help="Activa modo debug (equivale a --log-level DEBUG)"),
     log_file: Optional[str] = typer.Option(None, help=HELP_LOG_FILE),
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
@@ -359,11 +359,10 @@ def diarize(
     num_speakers: Optional[int] = typer.Option(None, help=HELP_NUM_SPEAKERS),
     device: Device = typer.Option(Device.auto, help=HELP_DEVICE),
     formats: List[str] = typer.Option(DEFAULT_FORMATS["diarize"], "--format", "-f", help=HELP_FORMATS, case_sensitive=False),
-    log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-l", help=HELP_LOG_LEVEL),
+    log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-dbg",  help=HELP_LOG_LEVEL),
     log_file: Optional[str] = typer.Option(None, help=HELP_LOG_FILE),
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
     no_cache: bool = typer.Option(False, "--no-cache", help="Desactiva el uso de caché"),
-    debug: bool = typer.Option(False, "--debug", "-dbg", help="Activa modo debug (equivale a --log-level DEBUG)"),
 ):
     """Diarize audio/video files."""
     # If debug flag is set, override log_level
@@ -445,7 +444,7 @@ def process(
         help=HELP_FORMATS, case_sensitive=False
     ),
     log_level: LogLevel = typer.Option(
-        DEFAULT_LOG_LEVEL, "--log-level", "-l", help=HELP_LOG_LEVEL
+        DEFAULT_LOG_LEVEL, "--log-level", "-dbg", help=HELP_LOG_LEVEL
     ),
     log_file: Optional[str] = typer.Option(None, help=HELP_LOG_FILE),
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
@@ -453,7 +452,6 @@ def process(
         None, help="Comma-separated list of speaker names to replace SPEAKER_xx"
     ),
     no_cache: bool = typer.Option(False, "--no-cache", help="Desactiva el uso de caché"),
-    debug: bool = typer.Option(False, "--debug", "-dbg", help="Activa modo debug (equivale a --log-level DEBUG)"),
 ):
     """
     Combined pipeline: diarization → transcription → alignment/export.
@@ -526,8 +524,7 @@ def manage_cache(
     show_info: bool = typer.Option(True, "--info/--no-info", help="Muestra información de caché"),
     max_audio_size_mb: Optional[int] = typer.Option(None, "--max-audio-size", help="Configura el tamaño máximo de caché de audio en MB"),
     max_audio_entries: Optional[int] = typer.Option(None, "--max-audio-entries", help="Configura el número máximo de entradas en caché de audio"),
-    log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-l", help=HELP_LOG_LEVEL),
-    debug: bool = typer.Option(False, "--debug", "-dbg", help="Activa modo debug (equivale a --log-level DEBUG)"),
+    log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-dbg", help=HELP_LOG_LEVEL),
 ):
     """
     Gestiona las cachés de la aplicación.
