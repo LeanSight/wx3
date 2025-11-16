@@ -11,7 +11,8 @@ from alignment import align_diarization_with_transcription, group_turns_by_speak
 from constants import (
     DEFAULT_TASK, DEFAULT_LANGUAGE, DEFAULT_CHUNK_LENGTH, DEFAULT_BATCH_SIZE,
     LOG_DIARIZING, LOG_NUM_SPEAKERS, LOG_TRANSCRIBING, LOG_TASK, LOG_LANGUAGE, 
-    LOG_SEGMENT_BATCH, MSG_SAVING_RESULTS, MSG_FILE_SAVED, MSG_UNKNOWN_FORMAT
+    LOG_SEGMENT_BATCH, MSG_SAVING_RESULTS, MSG_FILE_SAVED, MSG_UNKNOWN_FORMAT,
+    GroupingMode
 )
 from diarization import (
     DiarizationResult,
@@ -238,7 +239,10 @@ def export_results(
     transcription_result: TranscriptionResult,
     aligned_chunks: List[Dict[str, Any]],
     formats: List[str],
-    logger: logging.Logger
+    logger: logging.Logger,
+    grouping_mode: Union[GroupingMode, str] = GroupingMode.sentences,
+    max_chars: int = 80,
+    max_duration_s: float = 10.0
 ) -> None:
     """
     Exporta resultados en los formatos solicitados.
@@ -249,6 +253,9 @@ def export_results(
         aligned_chunks: Chunks alineados con información de hablante
         formats: Lista de formatos de salida
         logger: Instancia de logger
+        grouping_mode: Modo de agrupación (GroupingMode enum)
+        max_chars: Máximo de caracteres por segmento
+        max_duration_s: Máxima duración en segundos por segmento
     """
     base_path = get_output_base_path(file_path, "process")
     logger.info(MSG_SAVING_RESULTS, file_path.name)
@@ -265,6 +272,9 @@ def export_results(
                 fmt,
                 with_speaker=True,
                 chunks=aligned_chunks,
+                grouping_mode=grouping_mode,
+                max_chars=max_chars,
+                max_duration_s=max_duration_s
             )
             logger.info(MSG_FILE_SAVED, fmt.upper(), base_path.with_suffix(f".{fmt}").name)
         else:
@@ -382,7 +392,10 @@ def process_file(
     speaker_names: Optional[List[str]] = None,
     logger: Optional[logging.Logger] = None,
     save_intermediate: bool = False,
-    use_cache: bool = True
+    use_cache: bool = True,
+    grouping_mode: Union[GroupingMode, str] = GroupingMode.sentences,
+    max_chars: int = 80,
+    max_duration_s: float = 10.0
 ) -> Dict[str, Any]:
     """
     Procesa un archivo con diarización y transcripción.
@@ -402,6 +415,9 @@ def process_file(
         logger: Logger personalizado (opcional)
         save_intermediate: Si se deben guardar resultados intermedios
         use_cache: Si se debe usar el sistema de caché para audio
+        grouping_mode: Modo de agrupación (GroupingMode enum)
+        max_chars: Máximo de caracteres por segmento
+        max_duration_s: Máxima duración en segundos por segmento
         
     Returns:
         Diccionario con resultados del procesamiento
@@ -435,7 +451,16 @@ def process_file(
         apply_speaker_names(aligned_chunks, speaker_names)
     
     # 5. Exportación
-    export_results(file_path, trans_result, aligned_chunks, formats, logger)
+    export_results(
+        file_path, 
+        trans_result, 
+        aligned_chunks, 
+        formats, 
+        logger,
+        grouping_mode=grouping_mode,
+        max_chars=max_chars,
+        max_duration_s=max_duration_s
+    )
     
     # Devolver resultados para posible uso posterior
     return {

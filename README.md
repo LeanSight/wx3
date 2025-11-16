@@ -11,6 +11,7 @@
 - 🎞️ Audio extraction from video files
 - 📤 Export formats: `SRT`, `VTT`, `TXT`, `JSON`
 - 👤 Custom speaker names
+- 📝 **Smart subtitle grouping** by sentences or speaker changes
 - ⚡ Runs on **CPU** or **CUDA-enabled GPU** *(optional)*
 
 ---
@@ -84,6 +85,12 @@ python wx3.py transcribe file.mp3
 python wx3.py process interview.mp4 --token hf_your_token
 ```
 
+### Transcribe with Long Segments (group only by speaker)
+
+```bash
+python wx3.py process interview.mp4 --token hf_your_token --long
+```
+
 ### Diarization Only
 
 ```bash
@@ -94,8 +101,14 @@ python wx3.py diarize meeting.wav --token hf_your_token
 
 ## 🔄 Convert Transcriptions
 
+Convert JSON intermediate files to SRT/VTT with smart grouping:
+
 ```bash
-python wx3.py convert transcription.json -f srt
+# Default: group by sentences
+python output_convert.py transcription.json -f srt
+
+# Long segments: group only by speaker
+python output_convert.py transcription.json -f srt --long
 ```
 
 Optional flags:
@@ -104,6 +117,9 @@ Optional flags:
   -o / --output         Output directory
   --output-name         Output filename (no extension)
   --speaker-names       Comma-separated custom speaker labels
+  --long / -lg          Create long segments (group only by speaker)
+  --max-chars           Maximum characters per segment (default: 80)
+  --max-duration        Maximum duration per segment in seconds (default: 10)
 ```
 
 ---
@@ -118,6 +134,16 @@ Optional flags:
   -t, --task            Task: 'transcribe' or 'translate'
   --chunk-length        Duration of chunks in seconds
 ```
+
+### Subtitle Grouping
+
+```
+  --long, -lg           Create long segments (group only by speaker changes)
+  --max-chars           Maximum characters per subtitle (default: 80)
+  --max-duration        Maximum duration per subtitle in seconds (default: 10)
+```
+
+> **Note:** By default, subtitles are grouped by complete sentences with punctuation. Use `--long` for longer segments grouped only by speaker changes.
 
 ### Diarization
 
@@ -147,11 +173,18 @@ wx3/
 ├── transcription.py       # Whisper logic
 ├── diarization.py         # PyAnnote processing
 ├── alignment.py           # Speaker merge + alignment
+├── sentence_grouping.py   # Subtitle grouping by sentences/speakers
 ├── input_media.py         # Audio/video loading
 ├── output_formatters.py   # Format export
-├── verify_system.py       # System check (torch, pyannote, ffmpeg)
+├── processor.py           # Processing orchestration
+├── pipelines.py           # Pipeline caching
+├── verify_dependencies.py # System check (torch, pyannote, ffmpeg)
 ├── requirements.txt       # Dependencies
+├── docs/
+│   └── SUBTITLE_GROUPING.md   # Detailed grouping documentation
 ```
+
+For detailed information about subtitle grouping, see [SUBTITLE_GROUPING.md](./docs/SUBTITLE_GROUPING.md).
 
 ---
 

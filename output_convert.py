@@ -7,7 +7,7 @@ from typing import Optional, Union, List
 import json
 import logging
 
-from constants import SubtitleFormat
+from constants import SubtitleFormat, GroupingMode
 from output_formatters import save_subtitles
 from alignment import apply_speaker_names
 
@@ -86,6 +86,27 @@ Ejemplos de uso:
         help="Lista separada por comas de nombres personalizados de hablantes"
     )
 
+    parser.add_argument(
+        "--long", "-lg",
+        dest="long_segments",
+        action="store_true",
+        help="Crear segmentos largos (agrupar solo por cambio de speaker)"
+    )
+
+    parser.add_argument(
+        "--max-chars",
+        type=int,
+        default=80,
+        help="Máximo de caracteres por segmento (solo para agrupación por oraciones, default: 80)"
+    )
+
+    parser.add_argument(
+        "--max-duration",
+        type=float,
+        default=10.0,
+        help="Máxima duración en segundos por segmento (solo para agrupación por oraciones, default: 10.0)"
+    )
+
     args = parser.parse_args()
 
     input_path = Path(args.input_file)
@@ -117,7 +138,10 @@ def convert_transcript(
     output_format: str,
     output_dir: Optional[Union[str, Path]] = None,
     output_name: Optional[str] = None,
-    speaker_names: Optional[str] = None
+    speaker_names: Optional[str] = None,
+    long_segments: bool = False,
+    max_chars: int = 80,
+    max_duration: float = 10.0
 ) -> Path:
     input_path = Path(input_file)
     chunks = load_chunks(input_path)
@@ -137,16 +161,23 @@ def convert_transcript(
 
     try:
         fmt_enum = SubtitleFormat.from_string(output_format)
+        
+        # Determinar modo de agrupación usando enum
+        grouping_mode = GroupingMode.speaker_only if long_segments else GroupingMode.sentences
+        
         save_subtitles(
             transcription_result=None,
             output_file_path=output_path,
             format_type=fmt_enum,
             chunks=chunks,
-            with_speaker=True
+            with_speaker=True,
+            grouping_mode=grouping_mode,
+            max_chars=max_chars,
+            max_duration_s=max_duration
         )
 
-
         logger.info(f"[green]Archivo convertido correctamente:[/] {output_path}")
+        logger.info(f"[cyan]Modo de agrupación:[/] {grouping_mode.value}")
         return output_path
     except Exception as e:
         logger.error(f"[red]Error durante conversión:[/] {str(e)}")
@@ -163,7 +194,10 @@ def main() -> int:
             output_format=args.output_format,
             output_dir=args.output_dir,
             output_name=args.output_name,
-            speaker_names=args.speaker_names
+            speaker_names=args.speaker_names,
+            long_segments=args.long_segments,
+            max_chars=args.max_chars,
+            max_duration=args.max_duration
         )
         return 0
     except Exception:

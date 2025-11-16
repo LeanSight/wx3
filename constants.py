@@ -59,6 +59,16 @@ DEFAULT_FORMATS = {
     "process": ["srt"]
 }
 
+# Sentence grouping constants
+class GroupingMode(str, Enum):
+    """Modos de agrupación de subtítulos."""
+    sentences = "sentences"
+    speaker_only = "speaker-only"
+
+DEFAULT_GROUPING_MODE = GroupingMode.sentences
+DEFAULT_MAX_CHARS = 80
+DEFAULT_MAX_DURATION_S = 10.0
+
 # Logging constants
 DEFAULT_LOG_LEVEL = LogLevel.INFO
 DEFAULT_LOG_FORMAT = "%(message)s"
@@ -96,6 +106,9 @@ HELP_NUM_SPEAKERS = "Number of speakers (optional)"
 HELP_TRANSCRIBE = "Transcribe audio/video files"
 HELP_DIARIZE = "Diarize audio/video files"
 HELP_PROCESS = "Process audio/video files (transcription + diarization)"
+HELP_LONG_SEGMENTS = "Create long segments (group only by speaker changes). Default: group by sentences with punctuation"
+HELP_MAX_CHARS = "Maximum characters per subtitle segment (only for sentence grouping)"
+HELP_MAX_DURATION = "Maximum duration in seconds per subtitle segment (only for sentence grouping)"
 
 # Panel titles and content
 PANEL_TITLE = "WX3 - Format Information"

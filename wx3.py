@@ -209,6 +209,9 @@ def transcribe(
     attn_type: str = typer.Option(DEFAULT_ATTN_TYPE, help=HELP_ATTN_TYPE),
     device: Device = typer.Option(Device.auto, help=HELP_DEVICE),
     formats: List[str] = typer.Option(DEFAULT_FORMATS["transcribe"], "--format", "-f", help=HELP_FORMATS, case_sensitive=False),
+    long_segments: bool = typer.Option(False, "--long", "-lg", help=HELP_LONG_SEGMENTS),
+    max_chars: int = typer.Option(DEFAULT_MAX_CHARS, help=HELP_MAX_CHARS),
+    max_duration: float = typer.Option(DEFAULT_MAX_DURATION_S, help=HELP_MAX_DURATION),
     log_level: LogLevel = typer.Option(DEFAULT_LOG_LEVEL, "--log-level", "-log", help=HELP_LOG_LEVEL),
     log_file: Optional[str] = typer.Option(None, help=HELP_LOG_FILE),
     show_formats: bool = typer.Option(False, "--show-formats", help=HELP_SHOW_FORMATS),
@@ -240,6 +243,9 @@ def transcribe(
 
             base_path = get_output_base_path(file_path, "transcribe")
             logger.info(MSG_SAVING_RESULTS, file_path.name)
+            
+            # Determinar modo de agrupación usando enum
+            grouping_mode = GroupingMode.speaker_only if long_segments else GroupingMode.sentences
 
             for fmt in formats:
                 fmt = fmt.lower()
@@ -247,7 +253,14 @@ def transcribe(
                     save_json(base_path, format_transcription_result(result))
                     logger.info(MSG_FILE_SAVED, "JSON", base_path.with_suffix(".json").name)
                 elif fmt in ("txt", "srt", "vtt"):
-                    save_subtitles(result, base_path.with_suffix(f".{fmt}"), fmt)
+                    save_subtitles(
+                        result, 
+                        base_path.with_suffix(f".{fmt}"), 
+                        fmt,
+                        grouping_mode=grouping_mode,
+                        max_chars=max_chars,
+                        max_duration_s=max_duration
+                    )
                     logger.info(MSG_FILE_SAVED, fmt.upper(), base_path.with_suffix(f".{fmt}").name)
                 else:
                     logger.warning(MSG_UNKNOWN_FORMAT, fmt)
@@ -330,6 +343,9 @@ def process(
         DEFAULT_FORMATS["process"], "--format", "-f",
         help=HELP_FORMATS, case_sensitive=False
     ),
+    long_segments: bool = typer.Option(False, "--long", "-lg", help=HELP_LONG_SEGMENTS),
+    max_chars: int = typer.Option(DEFAULT_MAX_CHARS, help=HELP_MAX_CHARS),
+    max_duration: float = typer.Option(DEFAULT_MAX_DURATION_S, help=HELP_MAX_DURATION),
     log_level: LogLevel = typer.Option(
         DEFAULT_LOG_LEVEL, "--log-level", "-log", help=HELP_LOG_LEVEL
     ),
@@ -353,6 +369,9 @@ def process(
     if speaker_names:
         speaker_names_list = [name.strip() for name in speaker_names.split(",")]
 
+    # Determinar modo de agrupación usando enum
+    grouping_mode = GroupingMode.speaker_only if long_segments else GroupingMode.sentences
+    
     for file_idx, file_path in enumerate(processed_files, start=1):
         try:
             logger.info(MSG_PROCESSING_FILE, file_idx, len(processed_files), file_path.name)
@@ -370,7 +389,10 @@ def process(
                 speaker_names=speaker_names_list,
                 logger=logger,
                 save_intermediate=True,
-                use_cache=not no_cache
+                use_cache=not no_cache,
+                grouping_mode=grouping_mode,
+                max_chars=max_chars,
+                max_duration_s=max_duration
             )
         except Exception as exc:
             logger.error(MSG_ERROR_PROCESSING, file_path.name, exc)

@@ -1,8 +1,9 @@
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional, List, Dict, Union
 
-from constants import SubtitleFormat
+from constants import SubtitleFormat, GroupingMode
+from sentence_grouping import group_chunks_by_sentences, group_chunks_by_speaker_only
 
 def format_timestamp(seconds: float, separator: str = ",") -> str:
     """
@@ -44,6 +45,9 @@ def save_subtitles(
     *,
     with_speaker: bool = False,
     chunks: Optional[List[Dict[str, Any]]] = None,
+    grouping_mode: Union[GroupingMode, str] = GroupingMode.sentences,
+    max_chars: int = 80,
+    max_duration_s: float = 10.0,
 ) -> None:
     """
     Guarda transcripción en formatos de subtítulos (SRT, VTT) o texto plano.
@@ -54,6 +58,9 @@ def save_subtitles(
         format_type: Formato de salida ('srt', 'vtt', 'txt')
         with_speaker: Si debe incluir información del hablante
         chunks: Segmentos personalizados (si es None, usa transcription_result.chunks)
+        grouping_mode: Modo de agrupación (GroupingMode.sentences o GroupingMode.speaker_only)
+        max_chars: Máximo de caracteres por segmento (solo para sentences)
+        max_duration_s: Máxima duración en segundos por segmento (solo para sentences)
     """
     try:
         subtitle_format = SubtitleFormat.from_string(format_type)
@@ -62,6 +69,21 @@ def save_subtitles(
     
     output_path = Path(output_file_path)
     text_segments = chunks if chunks is not None else transcription_result.chunks
+    
+    # Aplicar agrupación según el modo
+    if grouping_mode == GroupingMode.sentences:
+        text_segments = group_chunks_by_sentences(
+            text_segments,
+            max_chars=max_chars,
+            max_duration_s=max_duration_s
+        )
+    elif grouping_mode == GroupingMode.speaker_only:
+        text_segments = group_chunks_by_speaker_only(text_segments)
+    else:
+        raise ValueError(
+            f"Modo de agrupación inválido: {grouping_mode}. "
+            f"Use GroupingMode.sentences o GroupingMode.speaker_only"
+        )
 
     # Usar pattern matching para procesar según el formato
     match subtitle_format:
