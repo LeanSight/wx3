@@ -1,178 +1,146 @@
 """
-Extraer audio de videos y mejorarlo con ClearVoice.
+Extrae y mejora audio de videos para transcripción.
+
+Wrapper sobre enhance_audio.py — aplica el mismo pipeline a archivos de video
+localizando los .mp4 del directorio actual.
 """
 
-from clearvoice import ClearVoice
-from pathlib import Path
-import subprocess
-import sys
-import json
 import argparse
+import sys
+from pathlib import Path
 
-# Configuración
-WORK_DIR = Path.cwd()  # Directorio desde donde se ejecuta
-MODEL = "MossFormer2_SE_48K"  # Mejor calidad, requiere 48kHz
-MEMORY_FILE = WORK_DIR / ".audio_enhance_memory.json"
+from clearvoice import ClearVoice
+from enhance_audio import (
+    file_key,
+    load_cache,
+    save_cache,
+    extract_to_wav16k,
+    normalize_lufs,
+    to_m4a,
+    MODEL,
+)
 
-
-def load_memory() -> dict:
-    """Carga el registro de archivos procesados."""
-    if MEMORY_FILE.exists():
-        try:
-            return json.loads(MEMORY_FILE.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, IOError):
-            return {}
-    return {}
-
-
-def save_memory(memory: dict):
-    """Guarda el registro de archivos procesados."""
-    MEMORY_FILE.write_text(json.dumps(memory, indent=2, ensure_ascii=False), encoding="utf-8")
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi"}
 
 
-def get_file_key(video_path: Path) -> str:
-    """Genera clave única: nombre + tamaño + fecha modificación."""
-    stat = video_path.stat()
-    return f"{video_path.name}|{stat.st_size}|{stat.st_mtime}"
+def process_video(src: Path, cv: ClearVoice, m4a: bool) -> Path | None:
+    d = src.parent
+    stem = src.stem
 
+    tmp_raw  = d / f"{stem}._tmp_raw.wav"
+    tmp_norm = d / f"{stem}._tmp_norm.wav"
+    tmp_enh  = d / f"{stem}._tmp_enh.wav"
+    out = d / f"{stem}_audio_enhanced.{'m4a' if m4a else 'wav'}"
 
-def is_processed(video_path: Path, memory: dict) -> bool:
-    """Verifica si el video ya fue procesado (y no modificado)."""
-    key = get_file_key(video_path)
-    return key in memory
+    try:
+        print("  [1/3] Extrayendo WAV 48kHz...")
+        if not extract_to_wav16k(src, tmp_raw):
+            raise RuntimeError("ffmpeg no pudo extraer el audio")
 
+        print("  [2/3] Normalizando LUFS...")
+        normalize_lufs(tmp_raw, tmp_norm)
 
-def extract_audio(video_path: Path, audio_path: Path) -> bool:
-    """Extrae audio de video a WAV 48kHz."""
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(video_path),
-        "-vn",
-        "-acodec", "pcm_s16le",
-        "-ar", "48000",
-        str(audio_path)
-    ]
-    result = subprocess.run(cmd, capture_output=True)
-    return result.returncode == 0
+        print(f"  [3/3] {MODEL}...")
+        enhanced = cv(input_path=str(tmp_norm), online_write=False)
+        cv.write(enhanced, output_path=str(tmp_enh))
 
+        if m4a:
+            if not to_m4a(tmp_enh, out):
+                raise RuntimeError("ffmpeg no pudo convertir a M4A")
+        else:
+            tmp_enh.rename(out)
+            tmp_enh = None
 
-def convert_to_m4a(wav_path: Path, m4a_path: Path) -> bool:
-    """Convierte WAV a M4A (AAC)."""
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(wav_path),
-        "-acodec", "aac",
-        "-b:a", "192k",
-        str(m4a_path)
-    ]
-    result = subprocess.run(cmd, capture_output=True)
-    return result.returncode == 0
+        mb = out.stat().st_size / (1024 * 1024)
+        print(f"  -> {out.name} ({mb:.1f} MB)")
+        return out
+
+    except Exception as e:
+        print(f"  ERROR: {e}")
+        return None
+
+    finally:
+        for tmp in [tmp_raw, tmp_norm, tmp_enh]:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Extraer y mejorar audio de videos')
-    parser.add_argument('files', nargs='*', help='Archivos a procesar (default: todos los .mp4 del directorio)')
+    parser = argparse.ArgumentParser(
+        description="Extrae y mejora audio de videos para transcripción",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Ejemplos:
+  %(prog)s                   # todos los videos del directorio
+  %(prog)s reunion.mp4       # un archivo
+  %(prog)s *.mp4 --m4a       # salida en M4A
+  %(prog)s reunion.mp4 --force
+        """,
+    )
+    parser.add_argument(
+        "files", nargs="*",
+        help="Archivos a procesar (default: todos los videos del directorio)",
+    )
+    parser.add_argument(
+        "--m4a", action="store_true",
+        help="Guardar salida como M4A 192k en vez de WAV 48kHz",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Reprocesar aunque ya esté en caché",
+    )
     args = parser.parse_args()
 
-    # Cargar memoria de proceso
-    memory = load_memory()
+    work_dir = Path.cwd()
+    cache = load_cache()
 
-    # Limpiar memoria: eliminar entradas de archivos que ya no existen
-    existing_files = {f.name for f in WORK_DIR.glob("*.mp4")}
-    old_keys = list(memory.keys())
-    for key in old_keys:
-        filename = key.split("|")[0]
-        if filename not in existing_files:
-            del memory[key]
-    save_memory(memory)
-
-    # Obtener lista de videos a procesar
     if args.files:
-        all_videos = [Path(f) for f in args.files]
-        all_videos = [v for v in all_videos if v.exists() and v.suffix.lower() in ['.mp4', '.m4a']]
-        if not all_videos:
-            print("No se encontraron archivos válidos (.mp4 o .m4a)")
-            return
+        files = [
+            Path(f) for f in args.files
+            if Path(f).exists() and Path(f).suffix.lower() in VIDEO_EXTENSIONS
+        ]
     else:
-        all_videos = list(WORK_DIR.glob("*.mp4"))
-        if not all_videos:
-            print("No se encontraron videos .mp4")
-            return
+        files = sorted(
+            f for f in work_dir.iterdir()
+            if f.suffix.lower() in VIDEO_EXTENSIONS
+            and "_enhanced" not in f.stem
+            and not f.stem.startswith("._tmp_")
+        )
 
-    # Filtrar videos ya procesados
-    videos = [v for v in all_videos if not is_processed(v, memory)]
+    if not files:
+        print(f"No se encontraron videos. Formatos: {', '.join(sorted(VIDEO_EXTENSIONS))}")
+        sys.exit(0)
 
-    print(f"Total archivos: {len(all_videos)}")
-    print(f"Ya procesados: {len(all_videos) - len(videos)}")
-    print(f"Por procesar: {len(videos)}")
+    pending = [f for f in files if args.force or file_key(f) not in cache]
 
-    if not videos:
-        print("Todos los videos ya fueron procesados.")
-        return
+    print(f"Encontrados:   {len(files)}")
+    print(f"Ya en caché:   {len(files) - len(pending)}")
+    print(f"Por procesar:  {len(pending)}")
+    print(f"Modelo:        {MODEL}  |  Salida: {'M4A 192k' if args.m4a else 'WAV 48kHz'}")
 
-    # Inicializar ClearVoice UNA vez
-    print(f"\nCargando modelo {MODEL}...")
+    if not pending:
+        print("\nTodo procesado. Usa --force para reprocesar.")
+        sys.exit(0)
+
+    print(f"\nCargando {MODEL}...")
     cv = ClearVoice(task="speech_enhancement", model_names=[MODEL])
 
-    processed = 0
-    failed = []
+    ok, failed = 0, []
+    for i, f in enumerate(pending, 1):
+        print(f"\n[{i}/{len(pending)}] {f.name}")
+        result = process_video(f, cv, args.m4a)
+        if result:
+            cache[file_key(f)] = {"output": result.name}
+            save_cache(cache)
+            ok += 1
+        else:
+            failed.append(f.name)
 
-    for video in videos:
-        print(f"\nProcesando: {video}")
-
-        work_dir = video.parent.resolve()
-
-        # Rutas
-        temp_audio = work_dir / f"{video.stem}_audio.wav"
-        temp_enhanced = work_dir / f"{video.stem}_audio_enhanced.wav"
-        final_audio = work_dir / f"{video.stem}_audio_enhanced.m4a"
-
-        # 1. Extraer audio
-        print("  Extrayendo audio...")
-        if not extract_audio(video, temp_audio):
-            print("  ERROR: No se pudo extraer audio")
-            failed.append(video.name)
-            continue
-
-        # 2. Mejorar audio
-        print("  Mejorando audio...")
-        try:
-            output = cv(input_path=str(temp_audio), online_write=False)
-            cv.write(output, output_path=str(temp_enhanced))
-        except Exception as e:
-            print(f"  ERROR: {e}")
-            failed.append(video.name)
-            temp_audio.unlink(missing_ok=True)
-            continue
-
-        # 3. Convertir a M4A
-        print("  Convirtiendo a M4A...")
-        if not convert_to_m4a(temp_enhanced, final_audio):
-            print("  ERROR: No se pudo convertir a M4A")
-            failed.append(video.name)
-            temp_audio.unlink(missing_ok=True)
-            temp_enhanced.unlink(missing_ok=True)
-            continue
-
-        # 4. Eliminar temporales
-        temp_audio.unlink(missing_ok=True)
-        temp_enhanced.unlink(missing_ok=True)
-
-        # 5. Registrar en memoria
-        memory[get_file_key(video)] = {
-            "output": final_audio.name,
-            "processed_at": str(Path(final_audio).stat().st_mtime)
-        }
-        save_memory(memory)
-
-        print(f"  -> {final_audio.name}")
-        processed += 1
-
-    # Resumen
     print(f"\n{'='*40}")
-    print(f"Procesados: {processed}/{len(videos)}")
+    print(f"Procesados: {ok}/{len(pending)}")
     if failed:
-        print(f"Fallidos: {', '.join(failed)}")
+        print(f"Fallidos:   {', '.join(failed)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
