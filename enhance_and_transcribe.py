@@ -1,22 +1,27 @@
 """
-Pipeline completo: enhance -> transcribe -> SRT
+Pipeline completo: enhance -> transcribe -> SRT [-> video]
 
 Para cada archivo de entrada:
   1. [enhance]    enhance_audio.process()  o  enhance_video_audio.process_video()
   2. [transcribe] assembly_transcribe.transcribe_file()
   3. [to_srt]     assemblyai_json_to_srt.words_to_srt()
+  4. [video]      (opcional, --videooutput)
+                  audio -> MP4 con video negro  (convert_audio_to_mp4)
+                  video -> MP4 con audio mejorado reemplazado  (ffmpeg stream copy)
 
-Estructura de salida para reunion.mp4:
-    reunion_audio_enhanced.wav
+Estructura de salida para reunion.mp4 con --videooutput:
+    reunion_audio_enhanced.m4a
     reunion_audio_enhanced_transcript.txt
     reunion_audio_enhanced_timestamps.json
     reunion_audio_enhanced_timestamps.srt
+    reunion_audio_enhanced_video.mp4      <- video original + audio mejorado
 
-Estructura de salida para reunion.mp3:
-    reunion_enhanced.wav
+Estructura de salida para reunion.mp3 con --videooutput:
+    reunion_enhanced.m4a
     reunion_enhanced_transcript.txt
     reunion_enhanced_timestamps.json
     reunion_enhanced_timestamps.srt
+    reunion_enhanced_video.mp4            <- video negro + audio mejorado
 """
 
 import argparse
@@ -25,10 +30,12 @@ import os
 import sys
 from pathlib import Path
 
+import ffmpeg
 from constants import VIDEO_EXTENSIONS
 from assemblyai_json_to_srt import words_to_srt
 from assembly_transcribe import transcribe_file
 from enhance_audio import load_cache, save_cache, file_key, MODEL
+from convert_audio_to_mp4 import convert as audio_to_black_video
 
 import assemblyai as aai
 
@@ -54,6 +61,40 @@ def is_video(path: Path) -> bool:
     return path.suffix.lower() in set(VIDEO_EXTENSIONS)
 
 
+def make_video_output(src: Path, enhanced_path: Path) -> Path | None:
+    """
+    Genera el MP4 de salida con el audio mejorado.
+      - Audio input: video negro + audio mejorado (convert_audio_to_mp4)
+      - Video input: video original + audio mejorado (stream copy, sin recodificar)
+    Devuelve la ruta del MP4 generado, o None si falla.
+    """
+    out = enhanced_path.parent / f"{enhanced_path.stem}_video.mp4"
+
+    if is_video(src):
+        # Reemplazar pista de audio: copiar video + nuevo audio, sin recodificar
+        try:
+            (
+                ffmpeg.output(
+                    ffmpeg.input(str(src)).video,
+                    ffmpeg.input(str(enhanced_path)).audio,
+                    str(out),
+                    vcodec="copy",
+                    acodec="copy",
+                    movflags="+faststart",
+                    shortest=None,
+                )
+                .run(overwrite_output=True, capture_stdout=True, capture_stderr=True)
+            )
+            return out
+        except ffmpeg.Error as e:
+            print(f"  ERROR video merge: {e.stderr.decode(errors='replace')[-400:]}")
+            return None
+    else:
+        # Audio: generar video negro con audio mejorado
+        ok = audio_to_black_video(enhanced_path, out)
+        return out if ok else None
+
+
 # ---------------------------------------------------------------------------
 # Pipeline por archivo
 # ---------------------------------------------------------------------------
@@ -69,6 +110,7 @@ def process_file(
     skip_enhance: bool,
     force: bool,
     cache: dict,
+    videooutput: bool = False,
 ) -> bool:
     print(f"\n{'-'*50}")
     print(f"Archivo: {src.name}")
@@ -130,6 +172,18 @@ def process_file(
     )
     print(f"    SRT:  {srt_path.name}")
 
+    # ------------------------------------------------------------------
+    # Paso 4: video output (opcional)
+    # ------------------------------------------------------------------
+    if videooutput:
+        print(f"  [video] generando MP4...")
+        video_path = make_video_output(src, enhanced_path)
+        if video_path:
+            mb = video_path.stat().st_size / (1024 * 1024)
+            print(f"    MP4:  {video_path.name} ({mb:.1f} MB)")
+        else:
+            print("    ERROR: no se pudo generar el video")
+
     return True
 
 
@@ -190,6 +244,15 @@ Ejemplos:
         "--wav",
         action="store_true",
         help="Guardar audio mejorado como WAV 48kHz en lugar de M4A AAC (default)",
+    )
+    parser.add_argument(
+        "--videooutput",
+        action="store_true",
+        help=(
+            "Generar MP4 de salida: "
+            "audio -> video negro + audio mejorado, "
+            "video -> video original + audio mejorado"
+        ),
     )
     args = parser.parse_args()
 
@@ -257,6 +320,7 @@ Ejemplos:
             skip_enhance=args.skip_enhance,
             force=args.force,
             cache=cache,
+            videooutput=args.videooutput,
         )
         if success:
             ok += 1
