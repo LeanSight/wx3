@@ -187,9 +187,9 @@ Ejemplos:
         help="Reprocesar aunque el enhance este en cache",
     )
     parser.add_argument(
-        "--m4a",
+        "--wav",
         action="store_true",
-        help="Guardar audio mejorado en M4A en lugar de WAV",
+        help="Guardar audio mejorado como WAV 48kHz en lugar de M4A AAC (default)",
     )
     args = parser.parse_args()
 
@@ -249,7 +249,7 @@ Ejemplos:
         success = process_file(
             src=src,
             cv=cv,
-            m4a=args.m4a,
+            m4a=not args.wav,
             language=args.language,
             speakers=args.speakers,
             srt_mode=srt_mode,
