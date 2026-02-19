@@ -8,3 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+
+# ClearVoice model checkpoints (downloaded on first run)
+checkpoints/
+
+# Local cache and Claude Code settings
+.enhance_meeting_cache.json
+.claude/
