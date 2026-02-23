@@ -128,7 +128,7 @@ to_m4a = to_aac
 # Procesamiento de un archivo
 # ---------------------------------------------------------------------------
 
-def process(src: Path, cv: ClearVoice, m4a: bool = True) -> Path | None:
+def process(src: Path, cv: ClearVoice, m4a: bool = True, skip_normalize: bool = False) -> Path | None:
     """
     Procesa src con el pipeline enhance.
     Por defecto guarda como M4A AAC (m4a=True). Pasar m4a=False para WAV.
@@ -147,8 +147,12 @@ def process(src: Path, cv: ClearVoice, m4a: bool = True) -> Path | None:
         if not extract_to_wav(src, tmp_raw):
             raise RuntimeError("ffmpeg no pudo extraer el audio")
 
-        print("  [2/4] Normalizando LUFS...")
-        normalize_lufs(tmp_raw, tmp_norm)
+        if skip_normalize:
+            print("  [2/4] Normalizacion saltada (--skip-normalize)")
+            shutil.copy2(tmp_raw, tmp_norm)
+        else:
+            print("  [2/4] Normalizando LUFS...")
+            normalize_lufs(tmp_raw, tmp_norm)
 
         print(f"  [3/4] {MODEL}...")
         enhanced = cv(input_path=str(tmp_norm), online_write=False)
@@ -204,6 +208,10 @@ Ejemplos:
         "--force", action="store_true",
         help="Reprocesar aunque ya este en cache",
     )
+    parser.add_argument(
+        "--skip-normalize", action="store_true",
+        help="Saltar normalizacion LUFS (audio ya normalizado)",
+    )
     args = parser.parse_args()
 
     m4a = not args.wav
@@ -246,7 +254,7 @@ Ejemplos:
     ok, failed = 0, []
     for i, f in enumerate(pending, 1):
         print(f"\n[{i}/{len(pending)}] {f.name}")
-        result = process(f, cv, m4a)
+        result = process(f, cv, m4a, skip_normalize=args.skip_normalize)
         if result:
             cache[file_key(f)] = {"output": result.name}
             save_cache(cache)
