@@ -146,10 +146,14 @@ class TestEnhanceStep:
     def test_calls_extract_normalize_enhance_encode_on_miss(self, tmp_path):
         ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
 
+        def fake_to_aac(src, dst, **kw):
+            dst.write_bytes(b"aac")
+            return True
+
         with patch("wx4.steps.extract_to_wav", return_value=True) as m_ext, patch(
             "wx4.steps.normalize_lufs"
         ) as m_norm, patch("wx4.steps.apply_clearvoice") as m_enh, patch(
-            "wx4.steps.to_aac", return_value=True
+            "wx4.steps.to_aac", side_effect=fake_to_aac
         ) as m_enc:
             from wx4.steps import enhance_step
 
@@ -191,6 +195,86 @@ class TestEnhanceStep:
 
         result = enhance_step(ctx)
         assert "enhance" in result.timings
+
+
+# ---------------------------------------------------------------------------
+# TestEnhanceStepAtomicity
+# ---------------------------------------------------------------------------
+
+
+class TestEnhanceStepAtomicity:
+    def test_tmp_files_removed_after_success(self, tmp_path):
+        """The 3 tmp files must NOT exist in the directory after a successful enhance."""
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+        stem = ctx.src.stem
+
+        def fake_to_aac(src, dst, **kw):
+            dst.write_bytes(b"aac")
+            return True
+
+        with patch("wx4.steps.extract_to_wav", return_value=True), patch(
+            "wx4.steps.normalize_lufs"
+        ), patch("wx4.steps.apply_clearvoice"), patch(
+            "wx4.steps.to_aac", side_effect=fake_to_aac
+        ):
+            from wx4.steps import enhance_step
+
+            enhance_step(ctx)
+
+        assert not (tmp_path / f"{stem}._tmp_raw.wav").exists()
+        assert not (tmp_path / f"{stem}._tmp_norm.wav").exists()
+        assert not (tmp_path / f"{stem}._tmp_enh.wav").exists()
+
+    def test_cleanup_runs_even_if_encode_fails(self, tmp_path):
+        """tmp_raw and tmp_norm must be cleaned up even if to_aac raises."""
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+        stem = ctx.src.stem
+
+        # Simulate tmp files being created by normalize/enhance before encode fails
+        tmp_raw = tmp_path / f"{stem}._tmp_raw.wav"
+        tmp_norm = tmp_path / f"{stem}._tmp_norm.wav"
+        tmp_enh = tmp_path / f"{stem}._tmp_enh.wav"
+
+        def fake_extract(src, dst, **kw):
+            dst.write_bytes(b"raw")
+            return True
+
+        def fake_normalize(src, dst, **kw):
+            dst.write_bytes(b"norm")
+
+        def fake_enhance(src, dst, *args, **kw):
+            dst.write_bytes(b"enh")
+
+        with patch("wx4.steps.extract_to_wav", side_effect=fake_extract), patch(
+            "wx4.steps.normalize_lufs", side_effect=fake_normalize
+        ), patch("wx4.steps.apply_clearvoice", side_effect=fake_enhance), patch(
+            "wx4.steps.to_aac", return_value=False
+        ):
+            from wx4.steps import enhance_step
+
+            with pytest.raises(RuntimeError):
+                enhance_step(ctx)
+
+        assert not tmp_raw.exists()
+        assert not tmp_norm.exists()
+        assert not tmp_enh.exists()
+
+    def test_final_output_not_written_when_encode_fails(self, tmp_path):
+        """If to_aac fails, the final _enhanced.m4a must NOT exist."""
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+        out = tmp_path / f"{ctx.src.stem}_enhanced.m4a"
+
+        with patch("wx4.steps.extract_to_wav", return_value=True), patch(
+            "wx4.steps.normalize_lufs"
+        ), patch("wx4.steps.apply_clearvoice"), patch(
+            "wx4.steps.to_aac", return_value=False
+        ):
+            from wx4.steps import enhance_step
+
+            with pytest.raises(RuntimeError):
+                enhance_step(ctx)
+
+        assert not out.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +424,16 @@ class TestVideoStep:
             result = video_step(ctx)
         assert result.video_out is not None
         assert result.video_out.suffix == ".mp4"
+
+    def test_video_out_stem_matches_srt_stem(self, tmp_path):
+        """video_out and srt share the same stem for media player auto-pairing."""
+        ctx = _ctx(tmp_path)
+
+        with patch("wx4.steps.audio_to_black_video", return_value=True):
+            from wx4.steps import video_step
+
+            result = video_step(ctx)
+        assert result.video_out.stem.endswith("_timestamps")
 
     def test_timing_recorded(self, tmp_path):
         ctx = _ctx(tmp_path)

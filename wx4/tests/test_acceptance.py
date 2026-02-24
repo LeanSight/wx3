@@ -1,7 +1,6 @@
 """
 ATDD acceptance scenarios for the wx4 pipeline.
 All mocked at ffmpeg + assemblyai boundaries.
-Written first (RED). Will go GREEN after all modules are implemented.
 """
 
 import json
@@ -9,6 +8,24 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+def _make_transcribe_mock(tmp_path, stem, words=None):
+    """
+    Return a side_effect function that creates transcript files on disk
+    (mimicking real transcribe_assemblyai) so skip logic sees no pre-existing output.
+    """
+    if words is None:
+        words = [{"text": "hello", "start": 0, "end": 500, "speaker": "A"}]
+    json_path = tmp_path / f"{stem}_timestamps.json"
+    txt_path = tmp_path / f"{stem}_transcript.txt"
+
+    def _side_effect(audio, lang=None, speakers=None):
+        json_path.write_text(json.dumps(words), encoding="utf-8")
+        txt_path.write_text("[00:00] Speaker A: hello", encoding="utf-8")
+        return txt_path, json_path
+
+    return _side_effect
 
 
 class TestAcceptance:
@@ -21,36 +38,21 @@ class TestAcceptance:
             {"text": "hello", "start": 0, "end": 500, "speaker": "A"},
             {"text": "world.", "start": 500, "end": 1000, "speaker": "A"},
         ]
-        json_path = tmp_path / "meeting_enhanced_timestamps.json"
-        txt_path = tmp_path / "meeting_enhanced_transcript.txt"
-        json_path.write_text(json.dumps(words), encoding="utf-8")
-        txt_path.write_text("[00:00] Speaker A: hello world.", encoding="utf-8")
-
         enhanced_path = tmp_path / "meeting_enhanced.m4a"
-        enhanced_path.write_bytes(b"enhanced audio")
+
+        transcribe_mock = _make_transcribe_mock(tmp_path, "meeting_enhanced", words)
 
         with (
-            patch("wx4.audio_extract.ffmpeg"),
-            patch("wx4.audio_normalize.ffmpeg"),
-            patch("wx4.audio_normalize.shutil"),
-            patch("wx4.audio_encode.ffmpeg"),
             patch("wx4.steps.extract_to_wav", return_value=True),
             patch("wx4.steps.normalize_lufs", return_value=True),
             patch("wx4.steps.apply_clearvoice", return_value=True),
-            patch("wx4.steps.to_aac", return_value=True) as mock_aac,
-            patch(
-                "wx4.steps.transcribe_assemblyai", return_value=(txt_path, json_path)
-            ),
+            patch("wx4.steps.to_aac", side_effect=lambda s, d, **kw: (d.write_bytes(b"aac") or True)),
+            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
         ):
-            mock_aac.side_effect = lambda s, d, **kw: (
-                d.write_bytes(b"aac") or True
-            )
-
             from wx4.context import PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
-            ctx = PipelineContext(src=src, output_m4a=True)
-            ctx = ctx.__class__(
+            ctx = PipelineContext(
                 src=src,
                 output_m4a=True,
                 enhanced=enhanced_path,
@@ -69,14 +71,9 @@ class TestAcceptance:
         src.write_bytes(b"raw audio")
 
         words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
-        json_path = tmp_path / "audio_timestamps.json"
-        txt_path = tmp_path / "audio_transcript.txt"
-        json_path.write_text(json.dumps(words), encoding="utf-8")
-        txt_path.write_text("text", encoding="utf-8")
+        transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
-        with patch(
-            "wx4.steps.transcribe_assemblyai", return_value=(txt_path, json_path)
-        ) as mock_transcribe:
+        with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock) as mock_transcribe:
             from wx4.context import PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
@@ -97,20 +94,14 @@ class TestAcceptance:
         enhanced_path.write_bytes(b"enhanced")
 
         words = [{"text": "test.", "start": 0, "end": 500, "speaker": "A"}]
-        json_path = tmp_path / "meeting_enhanced_timestamps.json"
-        txt_path = tmp_path / "meeting_enhanced_transcript.txt"
-        json_path.write_text(json.dumps(words), encoding="utf-8")
-        txt_path.write_text("text", encoding="utf-8")
+        transcribe_mock = _make_transcribe_mock(tmp_path, "meeting_enhanced", words)
 
         from wx4.cache_io import file_key
-
         cache_data = {file_key(src): {"output": enhanced_path.name}}
 
         with (
             patch("wx4.steps.apply_clearvoice") as mock_cv,
-            patch(
-                "wx4.steps.transcribe_assemblyai", return_value=(txt_path, json_path)
-            ),
+            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
             patch("wx4.steps.load_cache", return_value=cache_data),
         ):
             from wx4.context import PipelineContext
@@ -133,14 +124,9 @@ class TestAcceptance:
             {"text": "hello", "start": 0, "end": 500, "speaker": "A"},
             {"text": "world.", "start": 500, "end": 1000, "speaker": "A"},
         ]
-        json_path = tmp_path / "audio_timestamps.json"
-        txt_path = tmp_path / "audio_transcript.txt"
-        json_path.write_text(json.dumps(words), encoding="utf-8")
-        txt_path.write_text("text", encoding="utf-8")
+        transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
-        with patch(
-            "wx4.steps.transcribe_assemblyai", return_value=(txt_path, json_path)
-        ):
+        with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock):
             from wx4.context import PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
@@ -165,15 +151,10 @@ class TestAcceptance:
         src.write_bytes(b"audio")
 
         words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
-        json_path = tmp_path / "audio_timestamps.json"
-        txt_path = tmp_path / "audio_transcript.txt"
-        json_path.write_text(json.dumps(words), encoding="utf-8")
-        txt_path.write_text("text", encoding="utf-8")
+        transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
         with (
-            patch(
-                "wx4.steps.transcribe_assemblyai", return_value=(txt_path, json_path)
-            ),
+            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
             patch("wx4.steps.audio_to_black_video", return_value=True),
         ):
             from wx4.context import PipelineContext
@@ -193,14 +174,9 @@ class TestAcceptance:
         src.write_bytes(b"audio")
 
         words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
-        json_path = tmp_path / "audio_timestamps.json"
-        txt_path = tmp_path / "audio_transcript.txt"
-        json_path.write_text(json.dumps(words), encoding="utf-8")
-        txt_path.write_text("text", encoding="utf-8")
+        transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
-        with patch(
-            "wx4.steps.transcribe_assemblyai", return_value=(txt_path, json_path)
-        ):
+        with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock):
             from wx4.context import PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 

@@ -233,3 +233,47 @@ class TestCli:
 
         MockCV.assert_not_called()
         assert captured.get("cv") is None
+
+
+class TestCliProgress:
+    def test_progress_callback_passed_to_pipeline(self, tmp_path):
+        """Pipeline must be instantiated with at least one callback."""
+        from typer.testing import CliRunner
+
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+
+        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
+            "wx4.cli.build_steps", return_value=[]
+        ), patch("wx4.cli.ClearVoice", MagicMock()):
+            MockPipeline.return_value.run.return_value = mock_ctx
+            runner = CliRunner()
+            runner.invoke(app, [str(f)])
+
+        call_kwargs = MockPipeline.call_args.kwargs
+        callbacks = call_kwargs.get("callbacks", [])
+        assert len(callbacks) >= 1
+
+    def test_skip_enhance_includes_callback_too(self, tmp_path):
+        """With --skip-enhance, callbacks are still passed to Pipeline."""
+        from typer.testing import CliRunner
+
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+
+        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
+            "wx4.cli.build_steps", return_value=[]
+        ):
+            MockPipeline.return_value.run.return_value = mock_ctx
+            runner = CliRunner()
+            runner.invoke(app, [str(f), "--skip-enhance"])
+
+        call_kwargs = MockPipeline.call_args.kwargs
+        callbacks = call_kwargs.get("callbacks", [])
+        assert len(callbacks) >= 1

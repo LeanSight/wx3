@@ -147,3 +147,33 @@ class TestTranscribeAssemblyai:
             transcribe_assemblyai(tmp_path / "audio.wav", speakers=3)
         kw = mock_aai.TranscriptionConfig.call_args.kwargs
         assert kw["speakers_expected"] == 3
+
+
+class TestTranscribeAssemblyaiAtomicity:
+    def test_json_tmp_cleaned_up_on_success(self, tmp_path, monkeypatch):
+        """No .json.tmp file must remain on disk after a successful transcription."""
+        monkeypatch.setenv("ASSEMBLY_AI_KEY", "key")
+        audio = tmp_path / "audio.wav"
+        mock_aai = _make_aai_mock()
+        with patch("wx4.transcribe_aai.aai", mock_aai):
+            from wx4.transcribe_aai import transcribe_assemblyai
+
+            transcribe_assemblyai(audio)
+
+        tmp_files = list(tmp_path.glob("*.json.tmp"))
+        assert tmp_files == [], f"Found leftover tmp files: {tmp_files}"
+
+    def test_final_json_exists_after_success(self, tmp_path, monkeypatch):
+        """The final _timestamps.json must exist and be valid JSON."""
+        monkeypatch.setenv("ASSEMBLY_AI_KEY", "key")
+        audio = tmp_path / "audio.wav"
+        mock_aai = _make_aai_mock()
+        with patch("wx4.transcribe_aai.aai", mock_aai):
+            from wx4.transcribe_aai import transcribe_assemblyai
+
+            _, json_path = transcribe_assemblyai(audio)
+
+        assert json_path.exists()
+        import json
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        assert isinstance(data, list)

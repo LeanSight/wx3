@@ -87,18 +87,25 @@ def enhance_step(ctx: PipelineContext) -> PipelineContext:
     ext = "m4a" if ctx.output_m4a else "wav"
     out = d / f"{stem}_enhanced.{ext}"
 
-    if not extract_to_wav(ctx.src, tmp_raw):
-        raise RuntimeError(f"extract_to_wav failed for {ctx.src.name}")
+    try:
+        if not extract_to_wav(ctx.src, tmp_raw):
+            raise RuntimeError(f"extract_to_wav failed for {ctx.src.name}")
 
-    normalize_lufs(tmp_raw, tmp_norm)
-    apply_clearvoice(tmp_norm, tmp_enh, ctx.cv)
+        normalize_lufs(tmp_raw, tmp_norm)
+        apply_clearvoice(tmp_norm, tmp_enh, ctx.cv)
 
-    if ctx.output_m4a:
-        if not to_aac(tmp_enh, out):
-            raise RuntimeError(f"to_aac failed for {ctx.src.name}")
-    else:
-        if tmp_enh.exists():
-            tmp_enh.rename(out)
+        if ctx.output_m4a:
+            tmp_out = out.with_suffix(".m4a.tmp")
+            if not to_aac(tmp_enh, tmp_out):
+                raise RuntimeError(f"to_aac failed for {ctx.src.name}")
+            tmp_out.rename(out)  # atomic
+        else:
+            tmp_enh.rename(out)  # already atomic; consumed from tmp list
+            tmp_enh = None  # don't try to unlink in finally
+    finally:
+        for f in [tmp_raw, tmp_norm, tmp_enh]:
+            if f is not None and f.exists():
+                f.unlink()
 
     return dataclasses.replace(
         ctx, enhanced=out, timings={**ctx.timings, "enhance": time.time() - t0}
@@ -193,7 +200,7 @@ def video_step(ctx: PipelineContext) -> PipelineContext:
     """
     t0 = time.time()
     audio = ctx.enhanced if ctx.enhanced is not None else ctx.src
-    out = audio.parent / f"{audio.stem}_video.mp4"
+    out = audio.parent / f"{audio.stem}_timestamps.mp4"
 
     if not audio_to_black_video(audio, out):
         raise RuntimeError(f"audio_to_black_video failed for {audio.name}")

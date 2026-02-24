@@ -40,7 +40,7 @@ def transcribe_assemblyai(
     if transcript.status == aai.TranscriptStatus.error:
         raise RuntimeError(f"AssemblyAI error: {transcript.error}")
 
-    # Word-level JSON
+    # Word-level JSON (atomic write: tmp -> rename)
     words = [
         {
             "text": w.text,
@@ -52,9 +52,11 @@ def transcribe_assemblyai(
         for w in transcript.words
     ]
     json_path = audio.parent / f"{audio.stem}_timestamps.json"
-    json_path.write_text(
+    tmp_path = json_path.with_suffix(".json.tmp")
+    tmp_path.write_text(
         json.dumps(words, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    tmp_path.rename(json_path)
 
     # Human-readable TXT
     lines = []

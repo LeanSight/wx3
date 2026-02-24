@@ -8,6 +8,7 @@ from typing import List, Optional
 import typer
 from rich import box
 from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from clearvoice import ClearVoice
@@ -20,6 +21,36 @@ _CV_MODEL = "MossFormer2_SE_48K"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
+
+
+class RichProgressCallback:
+    """Satisfies PipelineCallback via duck typing."""
+
+    def __init__(self, progress: Progress) -> None:
+        self._p = progress
+        self._overall = None
+        self._step_task = None
+
+    def on_pipeline_start(self, step_names: List[str]) -> None:
+        self._overall = self._p.add_task("Pipeline", total=len(step_names))
+
+    def on_step_start(self, name: str, ctx: PipelineContext) -> None:
+        self._step_task = self._p.add_task(f"  {name}", total=None)
+
+    def on_step_end(self, name: str, ctx: PipelineContext) -> None:
+        if self._step_task is not None:
+            self._p.update(self._step_task, visible=False)
+            self._step_task = None
+        if self._overall is not None:
+            self._p.update(self._overall, advance=1)
+
+    def on_step_skipped(self, name: str, ctx: PipelineContext) -> None:
+        self._p.console.print(f"  [dim]{name}: already done, skipping[/dim]")
+        if self._overall is not None:
+            self._p.update(self._overall, advance=1)
+
+    def on_pipeline_end(self, ctx: PipelineContext) -> None:
+        pass
 
 
 @app.command()
@@ -47,7 +78,6 @@ def main(
         raise typer.Exit()
     speaker_names = parse_speakers_map(speakers_map)
     steps = build_steps(skip_enhance=skip_enhance, videooutput=videooutput, force=force)
-    pipeline = Pipeline(steps)
 
     cv = None
     if not skip_enhance:
@@ -55,32 +85,43 @@ def main(
         cv = ClearVoice(task="speech_enhancement", model_names=[_CV_MODEL])
 
     results = []
-    for file_str in files:
-        src = Path(file_str)
-        if not src.exists():
-            console.print(f"File not found: {src}")
-            continue
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("{task.description}"),
+        TimeElapsedColumn(),
+        BarColumn(),
+        transient=True,
+        console=console,
+    ) as progress:
+        cb = RichProgressCallback(progress)
+        pipeline = Pipeline(steps, callbacks=[cb])
 
-        ctx = PipelineContext(
-            src=src,
-            srt_mode=srt_mode,
-            language=language,
-            speakers=speakers,
-            speaker_names=speaker_names,
-            skip_enhance=skip_enhance,
-            force=force,
-            videooutput=videooutput,
-            cv=cv,
-        )
-        ctx = pipeline.run(ctx)
-        results.append(ctx)
+        for file_str in files:
+            src = Path(file_str)
+            if not src.exists():
+                console.print(f"File not found: {src}")
+                continue
+
+            pipeline_ctx = PipelineContext(
+                src=src,
+                srt_mode=srt_mode,
+                language=language,
+                speakers=speakers,
+                speaker_names=speaker_names,
+                skip_enhance=skip_enhance,
+                force=force,
+                videooutput=videooutput,
+                cv=cv,
+            )
+            pipeline_ctx = pipeline.run(pipeline_ctx)
+            results.append(pipeline_ctx)
 
     table = Table(title="Summary", box=box.ASCII)
     table.add_column("File")
     table.add_column("SRT")
-    for ctx in results:
-        srt_name = ctx.srt.name if ctx.srt else "N/A"
-        table.add_row(ctx.src.name, srt_name)
+    for result_ctx in results:
+        srt_name = result_ctx.srt.name if result_ctx.srt else "N/A"
+        table.add_row(result_ctx.src.name, srt_name)
     console.print(table)
 
 
