@@ -15,7 +15,7 @@ def to_aac(src: Path, dst: Path, bitrate: str = "192k") -> bool:
     try:
         (
             ffmpeg.input(str(src))
-            .output(str(dst), acodec="aac", audio_bitrate=bitrate)
+            .output(str(dst), acodec="aac", audio_bitrate=bitrate, format="ipod")
             .run(overwrite_output=True, capture_stdout=True, capture_stderr=True)
         )
         return True
