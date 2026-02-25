@@ -29,6 +29,7 @@ class TestCli:
         assert "not found" in result.output.lower() or result.exit_code != 0
 
     def test_calls_pipeline_run_once_per_file(self, tmp_path):
+        import sys
         from typer.testing import CliRunner
 
         from wx4.cli import app
@@ -40,7 +41,9 @@ class TestCli:
         mock_pipeline = MagicMock()
         mock_pipeline.run.return_value = mock_ctx
 
-        with patch("wx4.cli.Pipeline", return_value=mock_pipeline):
+        with patch("wx4.cli.Pipeline", return_value=mock_pipeline), patch.dict(
+            "sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}
+        ):
             runner = CliRunner()
             runner.invoke(app, [str(f)])
 
@@ -107,6 +110,7 @@ class TestCli:
         assert call_kwargs.get("force") is True
 
     def test_speaker_names_parsed_and_forwarded(self, tmp_path):
+        import sys
         from typer.testing import CliRunner
 
         from wx4.cli import app
@@ -122,7 +126,7 @@ class TestCli:
 
         with patch("wx4.cli.Pipeline") as MockPipeline, patch(
             "wx4.cli.build_steps", return_value=[]
-        ):
+        ), patch.dict("sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}):
             MockPipeline.return_value.run.side_effect = fake_run
             runner = CliRunner()
             runner.invoke(app, [str(f), "--speakers-map", "A=Marcel,B=Agustin"])
@@ -160,6 +164,7 @@ class TestCli:
         assert result.output.isascii(), f"Non-ASCII chars in output: {result.output!r}"
 
     def test_summary_table_in_output(self, tmp_path):
+        import sys
         from typer.testing import CliRunner
 
         from wx4.cli import app
@@ -170,7 +175,7 @@ class TestCli:
 
         with patch("wx4.cli.Pipeline") as MockPipeline, patch(
             "wx4.cli.build_steps", return_value=[]
-        ):
+        ), patch.dict("sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}):
             MockPipeline.return_value.run.return_value = mock_ctx
             runner = CliRunner()
             result = runner.invoke(app, [str(f)])
@@ -180,6 +185,7 @@ class TestCli:
 
     def test_clearvoice_loaded_when_not_skip_enhance(self, tmp_path):
         """When skip_enhance=False, ClearVoice must be instantiated and set in ctx.cv."""
+        import sys
         from typer.testing import CliRunner
 
         from wx4.cli import app
@@ -199,16 +205,20 @@ class TestCli:
 
         with patch("wx4.cli.Pipeline") as MockPipeline, patch(
             "wx4.cli.build_steps", return_value=[]
-        ), patch("wx4.cli.ClearVoice", MockCV):
-            MockPipeline.return_value.run.side_effect = fake_run
-            runner = CliRunner()
-            runner.invoke(app, [str(f)])
+        ):
+            if "clearvoice" in sys.modules:
+                del sys.modules["clearvoice"]
+            with patch.dict("sys.modules", {"clearvoice": MagicMock(ClearVoice=MockCV)}):
+                MockPipeline.return_value.run.side_effect = fake_run
+                runner = CliRunner()
+                runner.invoke(app, [str(f)])
 
         MockCV.assert_called_once()
         assert captured.get("cv") is mock_cv_instance
 
     def test_cv_is_none_when_skip_enhance(self, tmp_path):
         """When skip_enhance=True, ClearVoice must NOT be instantiated."""
+        import sys
         from typer.testing import CliRunner
 
         from wx4.cli import app
@@ -226,10 +236,13 @@ class TestCli:
 
         with patch("wx4.cli.Pipeline") as MockPipeline, patch(
             "wx4.cli.build_steps", return_value=[]
-        ), patch("wx4.cli.ClearVoice", MockCV):
-            MockPipeline.return_value.run.side_effect = fake_run
-            runner = CliRunner()
-            runner.invoke(app, [str(f), "--skip-enhance"])
+        ):
+            if "clearvoice" in sys.modules:
+                del sys.modules["clearvoice"]
+            with patch.dict("sys.modules", {"clearvoice": MagicMock(ClearVoice=MockCV)}):
+                MockPipeline.return_value.run.side_effect = fake_run
+                runner = CliRunner()
+                runner.invoke(app, [str(f), "--skip-enhance"])
 
         MockCV.assert_not_called()
         assert captured.get("cv") is None
@@ -238,6 +251,7 @@ class TestCli:
 class TestCliProgress:
     def test_progress_callback_passed_to_pipeline(self, tmp_path):
         """Pipeline must be instantiated with at least one callback."""
+        import sys
         from typer.testing import CliRunner
 
         from wx4.cli import app
@@ -248,10 +262,13 @@ class TestCliProgress:
 
         with patch("wx4.cli.Pipeline") as MockPipeline, patch(
             "wx4.cli.build_steps", return_value=[]
-        ), patch("wx4.cli.ClearVoice", MagicMock()):
-            MockPipeline.return_value.run.return_value = mock_ctx
-            runner = CliRunner()
-            runner.invoke(app, [str(f)])
+        ):
+            if "clearvoice" in sys.modules:
+                del sys.modules["clearvoice"]
+            with patch.dict("sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}):
+                MockPipeline.return_value.run.return_value = mock_ctx
+                runner = CliRunner()
+                runner.invoke(app, [str(f)])
 
         call_kwargs = MockPipeline.call_args.kwargs
         callbacks = call_kwargs.get("callbacks", [])

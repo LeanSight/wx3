@@ -11,8 +11,6 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from clearvoice import ClearVoice
-
 from wx4.context import PipelineContext
 from wx4.pipeline import Pipeline, build_steps
 from wx4.speakers import parse_speakers_map
@@ -72,15 +70,24 @@ def main(
     skip_enhance: bool = typer.Option(False, "--skip-enhance", help="Skip enhancement step"),
     force: bool = typer.Option(False, "--force", help="Force re-process cached files"),
     videooutput: bool = typer.Option(False, "--videooutput", help="Generate output MP4"),
+    api_key: Optional[str] = typer.Option(
+        None, "--api-key", help="AssemblyAI API key (or set ASSEMBLY_AI_KEY env var)"
+    ),
 ) -> None:
     if not files:
         typer.echo(ctx.get_help())
         raise typer.Exit()
+    
+    if api_key:
+        import os
+        os.environ["ASSEMBLY_AI_KEY"] = api_key
+    
     speaker_names = parse_speakers_map(speakers_map)
     steps = build_steps(skip_enhance=skip_enhance, videooutput=videooutput, force=force)
 
     cv = None
     if not skip_enhance:
+        from clearvoice import ClearVoice
         console.print(f"Loading {_CV_MODEL}...")
         cv = ClearVoice(task="speech_enhancement", model_names=[_CV_MODEL])
 
