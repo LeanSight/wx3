@@ -406,3 +406,59 @@ class TestAcceptanceWhisperBackend:
         assert call_kwargs.get("hf_token") == "hf_secret"
         assert call_kwargs.get("device") == "cpu"
         assert call_kwargs.get("whisper_model") == "openai/whisper-large-v3"
+
+    def test_no_normalize_skips_normalize_step(self, tmp_path):
+        """--no-normalize: normalize_step no corre, enhance_step (clearvoice) si."""
+        src = tmp_path / "audio.mp3"
+        src.write_bytes(b"audio")
+        words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
+        transcribe_mock = _make_transcribe_mock(tmp_path, "audio_enhanced", words)
+
+        with (
+            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
+            patch("wx4.steps.apply_clearvoice") as m_cv,
+            patch("wx4.steps.normalize_lufs") as m_norm,
+            patch("wx4.steps.extract_to_wav") as m_ext,
+            patch(
+                "wx4.steps.to_aac",
+                side_effect=lambda s, d, **kw: d.write_bytes(b"aac") or True,
+            ),
+        ):
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(src=src, cv=MagicMock())
+            steps = build_steps(PipelineConfig(skip_normalize=True))
+            result = Pipeline(steps).run(ctx)
+
+        m_norm.assert_not_called()
+        m_ext.assert_not_called()
+        m_cv.assert_called_once()
+        assert result.srt is not None
+
+    def test_no_enhance_skips_clearvoice(self, tmp_path):
+        """--no-enhance: clearvoice no corre, normalize si."""
+        src = tmp_path / "audio.mp3"
+        src.write_bytes(b"audio")
+        words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
+        transcribe_mock = _make_transcribe_mock(tmp_path, "audio_normalized", words)
+
+        with (
+            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
+            patch("wx4.steps.apply_clearvoice") as m_cv,
+            patch("wx4.steps.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize_lufs"),
+            patch(
+                "wx4.steps.to_aac",
+                side_effect=lambda s, d, **kw: d.write_bytes(b"aac") or True,
+            ),
+        ):
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(src=src)
+            steps = build_steps(PipelineConfig(skip_enhance=True))
+            result = Pipeline(steps).run(ctx)
+
+        m_cv.assert_not_called()
+        assert result.srt is not None
