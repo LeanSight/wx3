@@ -558,7 +558,7 @@ class TestCliWhisperFlags:
         ):
             runner = CliRunner()
             runner.invoke(
-                app, [str(f), "--no-enhance", "--whisper-hf-token", "hf_secret"]
+                app, [str(f), "--no-enhance", "--pyannote-hf-token", "hf_secret"]
             )
 
         assert received_ctx["ctx"].hf_token == "hf_secret"

@@ -126,7 +126,7 @@ def main(
     ),
     hf_token: Optional[str] = typer.Option(
         None,
-        "--whisper-hf-token",
+        "--pyannote-hf-token",
         help="HuggingFace token for PyAnnote diarization (whisper backend)",
     ),
     device: str = typer.Option(
