@@ -277,11 +277,15 @@ def srt_step(ctx: PipelineContext) -> PipelineContext:
 
 def video_step(ctx: PipelineContext) -> PipelineContext:
     """
-    Generate black-video MP4 from the enhanced (or src) audio.
+    Generate black-video MP4 from the enhanced (or normalized or src) audio.
     Raises RuntimeError if audio_to_black_video fails.
     """
     t0 = time.time()
-    audio = ctx.enhanced if ctx.enhanced is not None else ctx.src
+    audio = (
+        ctx.enhanced
+        if ctx.enhanced is not None
+        else (ctx.normalized if ctx.normalized is not None else ctx.src)
+    )
     out = audio.parent / f"{audio.stem}_timestamps.mp4"
 
     if not audio_to_black_video(audio, out):

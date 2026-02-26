@@ -176,6 +176,33 @@ class TestAcceptance:
         assert result.video_out is not None
         assert result.video_out.suffix == ".mp4"
 
+    def test_video_step_uses_normalized_when_no_enhance(self, tmp_path):
+        """--no-enhance: video_step debe usar ctx.normalized, no ctx.src."""
+        src = tmp_path / "audio.mp3"
+        src.write_bytes(b"audio")
+        normalized = tmp_path / "audio_normalized.m4a"
+        normalized.write_bytes(b"normalized")
+
+        words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
+        transcribe_mock = _make_transcribe_mock(tmp_path, "audio_normalized", words)
+
+        with (
+            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
+            patch("wx4.steps.audio_to_black_video") as m_video,
+        ):
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(src=src, normalized=normalized)
+            steps = build_steps(PipelineConfig(skip_enhance=True, videooutput=True))
+            pipeline = Pipeline(steps)
+            result = pipeline.run(ctx)
+
+        m_video.assert_called_once()
+        audio_used = m_video.call_args[0][0]
+        assert audio_used == normalized
+        assert result.video_out is not None
+
     def test_compress_produces_video_compressed(self, tmp_path):
         """compress_ratio=0.4 -> result.video_compressed is Path named <stem>_compressed.mp4."""
         src = tmp_path / "meeting.mp4"
