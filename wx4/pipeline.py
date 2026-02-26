@@ -125,7 +125,7 @@ def build_steps(config: PipelineConfig | None = None) -> List[NamedStep]:
     if config.videooutput:
         steps.append(NamedStep("video", video_step, _video_out))
 
-    if config.compress:
+    if config.compress_ratio is not None:
         steps.append(NamedStep("compress", compress_step, _COMPRESS_OUT))
 
     return steps

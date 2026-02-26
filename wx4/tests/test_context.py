@@ -13,7 +13,7 @@ class TestPipelineConfig:
         cfg = PipelineConfig()
         assert cfg.skip_enhance is False
         assert cfg.videooutput is False
-        assert cfg.compress is False
+        assert cfg.compress_ratio is None
 
     def test_is_frozen(self):
         import pytest
@@ -26,10 +26,10 @@ class TestPipelineConfig:
     def test_can_construct_with_flags(self):
         from wx4.context import PipelineConfig
 
-        cfg = PipelineConfig(skip_enhance=True, videooutput=True, compress=True)
+        cfg = PipelineConfig(skip_enhance=True, videooutput=True, compress_ratio=0.4)
         assert cfg.skip_enhance is True
         assert cfg.videooutput is True
-        assert cfg.compress is True
+        assert cfg.compress_ratio == 0.4
 
 
 class TestPipelineContext:
@@ -58,7 +58,6 @@ class TestPipelineContext:
         assert ctx.cache_hit is False
         assert ctx.cv is None
         assert ctx.compress_ratio == 0.40
-        assert ctx.compress_encoder is None
         assert ctx.video_compressed is None
 
     def test_replace_creates_new_instance(self, tmp_path):
@@ -137,7 +136,9 @@ class TestPipelineContextWhisperFields:
     def test_can_set_whisper_model(self, tmp_path):
         from wx4.context import PipelineContext
 
-        ctx = PipelineContext(src=tmp_path / "test.wav", whisper_model="openai/whisper-small")
+        ctx = PipelineContext(
+            src=tmp_path / "test.wav", whisper_model="openai/whisper-small"
+        )
         assert ctx.whisper_model == "openai/whisper-small"
 
     def test_can_set_device(self, tmp_path):

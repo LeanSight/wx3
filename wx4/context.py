@@ -13,7 +13,7 @@ class PipelineConfig:
 
     skip_enhance: bool = False
     videooutput: bool = False
-    compress: bool = False
+    compress_ratio: Optional[float] = None  # None = no compression
 
 
 @dataclass
@@ -35,7 +35,6 @@ class PipelineContext:
     speakers: Optional[int] = None
     speaker_names: Dict[str, str] = field(default_factory=dict)
     compress_ratio: float = 0.40
-    compress_encoder: Optional[str] = None
     video_compressed: Optional[Path] = None
 
     cv: Any = None

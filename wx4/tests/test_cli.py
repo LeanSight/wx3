@@ -41,8 +41,11 @@ class TestCli:
         mock_pipeline = MagicMock()
         mock_pipeline.run.return_value = mock_ctx
 
-        with patch("wx4.cli.Pipeline", return_value=mock_pipeline), patch.dict(
-            "sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}
+        with (
+            patch("wx4.cli.Pipeline", return_value=mock_pipeline),
+            patch.dict(
+                "sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}
+            ),
         ):
             runner = CliRunner()
             runner.invoke(app, [str(f)])
@@ -59,13 +62,14 @@ class TestCli:
         f.write_bytes(b"audio")
         mock_ctx = _make_ctx(tmp_path)
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps"
-        ) as mock_build:
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps") as mock_build,
+        ):
             MockPipeline.return_value.run.return_value = mock_ctx
             mock_build.return_value = []
             runner = CliRunner()
-            runner.invoke(app, [str(f), "--skip-enhance"])
+            runner.invoke(app, [str(f), "--no-enhance"])
 
         config = mock_build.call_args.args[0]
         assert isinstance(config, PipelineConfig)
@@ -81,13 +85,14 @@ class TestCli:
         f.write_bytes(b"audio")
         mock_ctx = _make_ctx(tmp_path)
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps"
-        ) as mock_build:
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps") as mock_build,
+        ):
             MockPipeline.return_value.run.return_value = mock_ctx
             mock_build.return_value = []
             runner = CliRunner()
-            runner.invoke(app, [str(f), "--videooutput"])
+            runner.invoke(app, [str(f), "--video-output"])
 
         config = mock_build.call_args.args[0]
         assert isinstance(config, PipelineConfig)
@@ -107,8 +112,9 @@ class TestCli:
             captured["force"] = ctx.force
             return mock_ctx
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
         ):
             MockPipeline.return_value.run.side_effect = fake_run
             runner = CliRunner()
@@ -131,9 +137,13 @@ class TestCli:
             captured["speaker_names"] = ctx.speaker_names
             return mock_ctx
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
-        ), patch.dict("sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}):
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
+            patch.dict(
+                "sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}
+            ),
+        ):
             MockPipeline.return_value.run.side_effect = fake_run
             runner = CliRunner()
             runner.invoke(app, [str(f), "--speakers-map", "A=Marcel,B=Agustin"])
@@ -161,8 +171,9 @@ class TestCli:
         f.write_bytes(b"audio")
         mock_ctx = _make_ctx(tmp_path)
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
         ):
             MockPipeline.return_value.run.return_value = mock_ctx
             runner = CliRunner()
@@ -180,9 +191,13 @@ class TestCli:
         f.write_bytes(b"audio")
         mock_ctx = _make_ctx(tmp_path)
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
-        ), patch.dict("sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}):
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
+            patch.dict(
+                "sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}
+            ),
+        ):
             MockPipeline.return_value.run.return_value = mock_ctx
             runner = CliRunner()
             result = runner.invoke(app, [str(f)])
@@ -210,12 +225,15 @@ class TestCli:
         mock_cv_instance = MagicMock()
         MockCV.return_value = mock_cv_instance
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
         ):
             if "clearvoice" in sys.modules:
                 del sys.modules["clearvoice"]
-            with patch.dict("sys.modules", {"clearvoice": MagicMock(ClearVoice=MockCV)}):
+            with patch.dict(
+                "sys.modules", {"clearvoice": MagicMock(ClearVoice=MockCV)}
+            ):
                 MockPipeline.return_value.run.side_effect = fake_run
                 runner = CliRunner()
                 runner.invoke(app, [str(f)])
@@ -233,64 +251,18 @@ class TestCli:
         f.write_bytes(b"audio")
         mock_ctx = _make_ctx(tmp_path)
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps"
-        ) as mock_build:
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps") as mock_build,
+        ):
             MockPipeline.return_value.run.return_value = mock_ctx
             mock_build.return_value = []
             runner = CliRunner()
-            runner.invoke(app, [str(f), "--compress"])
+            runner.invoke(app, [str(f), "--compress", "0.4"])
 
         config = mock_build.call_args.args[0]
         assert isinstance(config, PipelineConfig)
-        assert config.compress is True
-
-    def test_compress_ratio_forwarded_to_context(self, tmp_path):
-        from typer.testing import CliRunner
-
-        from wx4.cli import app
-
-        f = tmp_path / "audio.mp3"
-        f.write_bytes(b"audio")
-        mock_ctx = _make_ctx(tmp_path)
-        captured = {}
-
-        def fake_run(ctx):
-            captured["compress_ratio"] = ctx.compress_ratio
-            return mock_ctx
-
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
-        ):
-            MockPipeline.return_value.run.side_effect = fake_run
-            runner = CliRunner()
-            runner.invoke(app, [str(f), "--compress", "--compress-ratio", "0.30"])
-
-        import pytest
-        assert captured.get("compress_ratio") == pytest.approx(0.30)
-
-    def test_compress_encoder_forwarded_to_context(self, tmp_path):
-        from typer.testing import CliRunner
-
-        from wx4.cli import app
-
-        f = tmp_path / "audio.mp3"
-        f.write_bytes(b"audio")
-        mock_ctx = _make_ctx(tmp_path)
-        captured = {}
-
-        def fake_run(ctx):
-            captured["compress_encoder"] = ctx.compress_encoder
-            return mock_ctx
-
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
-        ):
-            MockPipeline.return_value.run.side_effect = fake_run
-            runner = CliRunner()
-            runner.invoke(app, [str(f), "--compress", "--compress-encoder", "cpu"])
-
-        assert captured.get("compress_encoder") == "cpu"
+        assert config.compress_ratio == pytest.approx(0.4)
 
     def test_summary_table_shows_compressed_filename(self, tmp_path):
         from typer.testing import CliRunner
@@ -302,8 +274,9 @@ class TestCli:
         compressed_path = tmp_path / "audio_compressed.mp4"
         mock_ctx = _make_ctx(tmp_path, video_compressed=compressed_path)
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
         ):
             MockPipeline.return_value.run.return_value = mock_ctx
             runner = CliRunner()
@@ -320,8 +293,9 @@ class TestCli:
         f.write_bytes(b"audio")
         mock_ctx = _make_ctx(tmp_path, video_compressed=None)
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
         ):
             MockPipeline.return_value.run.return_value = mock_ctx
             runner = CliRunner()
@@ -347,15 +321,18 @@ class TestCli:
 
         MockCV = MagicMock()
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
         ):
             if "clearvoice" in sys.modules:
                 del sys.modules["clearvoice"]
-            with patch.dict("sys.modules", {"clearvoice": MagicMock(ClearVoice=MockCV)}):
+            with patch.dict(
+                "sys.modules", {"clearvoice": MagicMock(ClearVoice=MockCV)}
+            ):
                 MockPipeline.return_value.run.side_effect = fake_run
                 runner = CliRunner()
-                runner.invoke(app, [str(f), "--skip-enhance"])
+                runner.invoke(app, [str(f), "--no-enhance"])
 
         MockCV.assert_not_called()
         assert captured.get("cv") is None
@@ -373,12 +350,15 @@ class TestCliProgress:
         f.write_bytes(b"audio")
         mock_ctx = _make_ctx(tmp_path)
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
         ):
             if "clearvoice" in sys.modules:
                 del sys.modules["clearvoice"]
-            with patch.dict("sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}):
+            with patch.dict(
+                "sys.modules", {"clearvoice": MagicMock(ClearVoice=MagicMock())}
+            ):
                 MockPipeline.return_value.run.return_value = mock_ctx
                 runner = CliRunner()
                 runner.invoke(app, [str(f)])
@@ -388,7 +368,7 @@ class TestCliProgress:
         assert len(callbacks) >= 1
 
     def test_skip_enhance_includes_callback_too(self, tmp_path):
-        """With --skip-enhance, callbacks are still passed to Pipeline."""
+        """With --no-enhance, callbacks are still passed to Pipeline."""
         from typer.testing import CliRunner
 
         from wx4.cli import app
@@ -397,12 +377,13 @@ class TestCliProgress:
         f.write_bytes(b"audio")
         mock_ctx = _make_ctx(tmp_path)
 
-        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps", return_value=[]
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
         ):
             MockPipeline.return_value.run.return_value = mock_ctx
             runner = CliRunner()
-            runner.invoke(app, [str(f), "--skip-enhance"])
+            runner.invoke(app, [str(f), "--no-enhance"])
 
         call_kwargs = MockPipeline.call_args.kwargs
         callbacks = call_kwargs.get("callbacks", [])
@@ -450,6 +431,7 @@ class TestRichProgressCallbackOnStepProgress:
 
     def test_on_step_progress_is_defined_on_callback(self):
         from wx4.cli import RichProgressCallback
+
         assert hasattr(RichProgressCallback, "on_step_progress")
 
 
@@ -471,10 +453,12 @@ class TestCliWhisperFlags:
             mock_pipeline = MagicMock()
             mock_pipeline.run.return_value = mock_ctx
 
-        with patch("wx4.cli.Pipeline", return_value=mock_pipeline) as MockPipeline, \
-             patch("wx4.cli.build_steps", return_value=[]):
+        with (
+            patch("wx4.cli.Pipeline", return_value=mock_pipeline) as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
+        ):
             runner = CliRunner()
-            result = runner.invoke(app, [str(f), "--skip-enhance"] + extra_flags)
+            result = runner.invoke(app, [str(f), "--no-enhance"] + extra_flags)
             return result, MockPipeline
 
     def test_default_backend_is_assemblyai(self, tmp_path):
@@ -497,10 +481,12 @@ class TestCliWhisperFlags:
         mock_pipeline = MagicMock()
         mock_pipeline.run.side_effect = capture_run
 
-        with patch("wx4.cli.Pipeline", return_value=mock_pipeline), \
-             patch("wx4.cli.build_steps", return_value=[]):
+        with (
+            patch("wx4.cli.Pipeline", return_value=mock_pipeline),
+            patch("wx4.cli.build_steps", return_value=[]),
+        ):
             runner = CliRunner()
-            runner.invoke(app, [str(f), "--skip-enhance", "--backend", "whisper"])
+            runner.invoke(app, [str(f), "--no-enhance", "--backend", "whisper"])
 
         assert received_ctx.get("ctx") is not None
         assert received_ctx["ctx"].transcribe_backend == "whisper"
@@ -521,10 +507,14 @@ class TestCliWhisperFlags:
         mock_pipeline = MagicMock()
         mock_pipeline.run.side_effect = capture_run
 
-        with patch("wx4.cli.Pipeline", return_value=mock_pipeline), \
-             patch("wx4.cli.build_steps", return_value=[]):
+        with (
+            patch("wx4.cli.Pipeline", return_value=mock_pipeline),
+            patch("wx4.cli.build_steps", return_value=[]),
+        ):
             runner = CliRunner()
-            runner.invoke(app, [str(f), "--skip-enhance", "--hf-token", "hf_secret"])
+            runner.invoke(
+                app, [str(f), "--no-enhance", "--whisper-hf-token", "hf_secret"]
+            )
 
         assert received_ctx["ctx"].hf_token == "hf_secret"
 
@@ -544,10 +534,12 @@ class TestCliWhisperFlags:
         mock_pipeline = MagicMock()
         mock_pipeline.run.side_effect = capture_run
 
-        with patch("wx4.cli.Pipeline", return_value=mock_pipeline), \
-             patch("wx4.cli.build_steps", return_value=[]):
+        with (
+            patch("wx4.cli.Pipeline", return_value=mock_pipeline),
+            patch("wx4.cli.build_steps", return_value=[]),
+        ):
             runner = CliRunner()
-            runner.invoke(app, [str(f), "--skip-enhance", "--device", "cpu"])
+            runner.invoke(app, [str(f), "--no-enhance", "--whisper-device", "cpu"])
 
         assert received_ctx["ctx"].device == "cpu"
 
@@ -567,10 +559,14 @@ class TestCliWhisperFlags:
         mock_pipeline = MagicMock()
         mock_pipeline.run.side_effect = capture_run
 
-        with patch("wx4.cli.Pipeline", return_value=mock_pipeline), \
-             patch("wx4.cli.build_steps", return_value=[]):
+        with (
+            patch("wx4.cli.Pipeline", return_value=mock_pipeline),
+            patch("wx4.cli.build_steps", return_value=[]),
+        ):
             runner = CliRunner()
-            runner.invoke(app, [str(f), "--skip-enhance",
-                                "--whisper-model", "openai/whisper-small"])
+            runner.invoke(
+                app,
+                [str(f), "--no-enhance", "--whisper-model", "openai/whisper-small"],
+            )
 
         assert received_ctx["ctx"].whisper_model == "openai/whisper-small"

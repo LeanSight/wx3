@@ -67,35 +67,31 @@ def main(
         None, "--speakers", "-s", help="Expected number of speakers. Default: auto"
     ),
     srt_mode: str = typer.Option(
-        "speaker-only", "--type", help="SRT mode: 'sentences' or 'speaker-only'"
+        "speaker-only", "--srt-mode", help="SRT grouping mode: 'speaker-only' or 'sentences'"
     ),
     speakers_map: Optional[str] = typer.Option(
         None, "--speakers-map", help="Speaker name map, e.g. 'A=Marcel,B=Agustin'"
     ),
-    skip_enhance: bool = typer.Option(False, "--skip-enhance", help="Skip enhancement step"),
+    skip_enhance: bool = typer.Option(False, "--no-enhance", help="Skip ClearVoice audio enhancement"),
     force: bool = typer.Option(False, "--force", help="Force re-process cached files"),
-    videooutput: bool = typer.Option(False, "--videooutput", help="Generate output MP4"),
+    videooutput: bool = typer.Option(False, "--video-output", help="Generate output MP4"),
     api_key: Optional[str] = typer.Option(
-        None, "--api-key", help="AssemblyAI API key (or set ASSEMBLY_AI_KEY env var)"
+        None, "--assemblyai-api-key", help="AssemblyAI API key (or set ASSEMBLY_AI_KEY env var)"
     ),
-    compress: bool = typer.Option(False, "--compress", help="Compress source video after transcription"),
-    compress_ratio: float = typer.Option(
-        0.40, "--compress-ratio", help="Compression ratio (0.40 = 40%% of original size)"
-    ),
-    compress_encoder: Optional[str] = typer.Option(
-        None, "--compress-encoder", help="Force video encoder: cpu, h264_nvenc, h264_amf, h264_qsv"
+    compress: Optional[float] = typer.Option(
+        None, "--compress", help="Compress source video to ratio (e.g. --compress 0.4 = 40%% of original size)"
     ),
     backend: str = typer.Option(
         "assemblyai", "--backend", help="Transcription backend: assemblyai or whisper"
     ),
     hf_token: Optional[str] = typer.Option(
-        None, "--hf-token", help="HuggingFace token for PyAnnote diarization (whisper backend)"
+        None, "--whisper-hf-token", help="HuggingFace token for PyAnnote diarization (whisper backend)"
     ),
     device: str = typer.Option(
-        "auto", "--device", help="Compute device for Whisper: auto, cpu, cuda, mps"
+        "auto", "--whisper-device", help="Compute device: auto, cpu, cuda, mps (whisper backend)"
     ),
     whisper_model: str = typer.Option(
-        "openai/whisper-large-v3", "--whisper-model", help="Whisper model identifier"
+        "openai/whisper-large-v3", "--whisper-model", help="Whisper model identifier (whisper backend)"
     ),
 ) -> None:
     if not files:
@@ -110,7 +106,7 @@ def main(
     config = PipelineConfig(
         skip_enhance=skip_enhance,
         videooutput=videooutput,
-        compress=compress,
+        compress_ratio=compress,
     )
     steps = build_steps(config)
 
@@ -145,8 +141,7 @@ def main(
                 speakers=speakers,
                 speaker_names=speaker_names,
                 force=force,
-                compress_ratio=compress_ratio,
-                compress_encoder=compress_encoder,
+                compress_ratio=compress if compress is not None else 0.40,
                 cv=cv,
                 transcribe_backend=backend,
                 hf_token=hf_token,

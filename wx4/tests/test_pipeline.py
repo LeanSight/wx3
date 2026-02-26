@@ -51,7 +51,9 @@ class TestNamedStep:
 
         ctx = _ctx(tmp_path)
         expected = ctx.src.parent / "out.json"
-        step = NamedStep(name="s", fn=lambda c: c, output_fn=lambda c: c.src.parent / "out.json")
+        step = NamedStep(
+            name="s", fn=lambda c: c, output_fn=lambda c: c.src.parent / "out.json"
+        )
         assert step.output_path(ctx) == expected
 
 
@@ -243,7 +245,9 @@ class TestPipelineResume:
         out.write_text("{}", encoding="utf-8")
         # fn would replace ctx with a different one, but it won't run
         new_ctx = dataclasses.replace(ctx, srt_mode="sentences")
-        step = NamedStep(name="s", fn=MagicMock(return_value=new_ctx), output_fn=lambda c: out)
+        step = NamedStep(
+            name="s", fn=MagicMock(return_value=new_ctx), output_fn=lambda c: out
+        )
         result = Pipeline([step]).run(ctx)
         assert result.srt_mode == ctx.srt_mode  # unchanged
 
@@ -266,6 +270,7 @@ class TestPipelineResume:
 class TestBuildSteps:
     def _fns(self, steps):
         from wx4.pipeline import NamedStep
+
         return [s.fn if isinstance(s, NamedStep) else s for s in steps]
 
     def test_default_has_cache_check_enhance_cache_save_transcribe_srt(self):
@@ -322,7 +327,9 @@ class TestBuildSteps:
             video_step,
         )
 
-        fns = self._fns(build_steps(PipelineConfig(skip_enhance=True, videooutput=True)))
+        fns = self._fns(
+            build_steps(PipelineConfig(skip_enhance=True, videooutput=True))
+        )
         assert cache_check_step not in fns
         assert enhance_step not in fns
         assert transcribe_step in fns
@@ -340,7 +347,9 @@ class TestBuildSteps:
         from wx4.steps import enhance_step
 
         steps = build_steps()
-        enhance = next(s for s in steps if isinstance(s, NamedStep) and s.fn is enhance_step)
+        enhance = next(
+            s for s in steps if isinstance(s, NamedStep) and s.fn is enhance_step
+        )
         assert enhance.output_fn is not None
 
     def test_transcribe_step_has_output_fn(self):
@@ -348,28 +357,30 @@ class TestBuildSteps:
         from wx4.steps import transcribe_step
 
         steps = build_steps()
-        tr = next(s for s in steps if isinstance(s, NamedStep) and s.fn is transcribe_step)
+        tr = next(
+            s for s in steps if isinstance(s, NamedStep) and s.fn is transcribe_step
+        )
         assert tr.output_fn is not None
 
     def test_compress_flag_appends_compress_step(self):
         from wx4.pipeline import build_steps
         from wx4.steps import compress_step
 
-        fns = self._fns(build_steps(PipelineConfig(compress=True)))
+        fns = self._fns(build_steps(PipelineConfig(compress_ratio=0.4)))
         assert compress_step in fns
 
     def test_no_compress_step_when_compress_false(self):
         from wx4.pipeline import build_steps
         from wx4.steps import compress_step
 
-        fns = self._fns(build_steps(PipelineConfig(compress=False)))
+        fns = self._fns(build_steps(PipelineConfig(compress_ratio=None)))
         assert compress_step not in fns
 
     def test_compress_step_is_last_when_no_videooutput(self):
         from wx4.pipeline import NamedStep, build_steps
         from wx4.steps import compress_step
 
-        steps = build_steps(PipelineConfig(compress=True, videooutput=False))
+        steps = build_steps(PipelineConfig(compress_ratio=0.4, videooutput=False))
         last = steps[-1]
         fn = last.fn if isinstance(last, NamedStep) else last
         assert fn is compress_step
@@ -379,7 +390,7 @@ class TestBuildSteps:
         from wx4.pipeline import NamedStep, build_steps
         from wx4.steps import compress_step
 
-        steps = build_steps(PipelineConfig(compress=True, videooutput=True))
+        steps = build_steps(PipelineConfig(compress_ratio=0.4, videooutput=True))
         last = steps[-1]
         fn = last.fn if isinstance(last, NamedStep) else last
         assert fn is compress_step
@@ -388,8 +399,10 @@ class TestBuildSteps:
         from wx4.pipeline import NamedStep, build_steps
         from wx4.steps import compress_step
 
-        steps = build_steps(PipelineConfig(compress=True))
-        step = next(s for s in steps if isinstance(s, NamedStep) and s.fn is compress_step)
+        steps = build_steps(PipelineConfig(compress_ratio=0.4))
+        step = next(
+            s for s in steps if isinstance(s, NamedStep) and s.fn is compress_step
+        )
         assert step.output_fn is not None
 
 
@@ -421,11 +434,21 @@ class TestStepProgressInjection:
         calls = []
 
         class ProgressCapture:
-            def on_pipeline_start(self, names): pass
-            def on_step_start(self, name, ctx): pass
-            def on_step_end(self, name, ctx): pass
-            def on_step_skipped(self, name, ctx): pass
-            def on_pipeline_end(self, ctx): pass
+            def on_pipeline_start(self, names):
+                pass
+
+            def on_step_start(self, name, ctx):
+                pass
+
+            def on_step_end(self, name, ctx):
+                pass
+
+            def on_step_skipped(self, name, ctx):
+                pass
+
+            def on_pipeline_end(self, ctx):
+                pass
+
             def on_step_progress(self, name, done, total):
                 calls.append((name, done, total))
 
@@ -436,7 +459,9 @@ class TestStepProgressInjection:
             return c
 
         cb = ProgressCapture()
-        Pipeline([NamedStep("enhance", step_that_fires_progress)], callbacks=[cb]).run(ctx)
+        Pipeline([NamedStep("enhance", step_that_fires_progress)], callbacks=[cb]).run(
+            ctx
+        )
         assert calls == [("enhance", 3, 10)]
 
     def test_step_progress_ignored_when_callback_lacks_method(self, tmp_path):
@@ -461,11 +486,21 @@ class TestStepProgressInjection:
         progress_names = []
 
         class NameCapture:
-            def on_pipeline_start(self, names): pass
-            def on_step_start(self, name, ctx): pass
-            def on_step_end(self, name, ctx): pass
-            def on_step_skipped(self, name, ctx): pass
-            def on_pipeline_end(self, ctx): pass
+            def on_pipeline_start(self, names):
+                pass
+
+            def on_step_start(self, name, ctx):
+                pass
+
+            def on_step_end(self, name, ctx):
+                pass
+
+            def on_step_skipped(self, name, ctx):
+                pass
+
+            def on_pipeline_end(self, ctx):
+                pass
+
             def on_step_progress(self, name, done, total):
                 progress_names.append(name)
 
@@ -478,5 +513,7 @@ class TestStepProgressInjection:
             return c
 
         cb = NameCapture()
-        Pipeline([NamedStep("alpha", step_a), NamedStep("beta", step_b)], callbacks=[cb]).run(ctx)
+        Pipeline(
+            [NamedStep("alpha", step_a), NamedStep("beta", step_b)], callbacks=[cb]
+        ).run(ctx)
         assert progress_names == ["alpha", "beta"]

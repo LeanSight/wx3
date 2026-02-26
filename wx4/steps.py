@@ -267,7 +267,7 @@ def compress_step(ctx: PipelineContext) -> PipelineContext:
     else:
         lufs = LufsInfo.noop()
 
-    encoder = detect_best_encoder(force=ctx.compress_encoder)
+    encoder = detect_best_encoder(force=None)
     bitrate = calculate_video_bitrate(info, ctx.compress_ratio)
     _compress_video(info, lufs, encoder, bitrate, out)
 

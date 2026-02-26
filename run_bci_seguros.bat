@@ -10,7 +10,7 @@ echo === wx4: Bci Seguros Data - 6 archivos ===
 echo Enhance (ClearVoice) + Transcribe (AssemblyAI) + Video output
 echo.
 
-python -m wx4 "%REC%\20260225_105002.mp4" "%REC%\20260225_110533.mp4" "%REC%\20260225_124916.mp4" "%REC%\20260225_125752.mp4" "%REC%\20260225_130730.mp4" "%REC%\Voz 260225_091512.m4a" --videooutput
+python -m wx4 "%REC%\20260225_105002.mp4" "%REC%\20260225_110533.mp4" "%REC%\20260225_124916.mp4" "%REC%\20260225_125752.mp4" "%REC%\20260225_130730.mp4" "%REC%\Voz 260225_091512.m4a" --videooutput --compress 0.4
 
 echo.
 echo === Proceso finalizado ===

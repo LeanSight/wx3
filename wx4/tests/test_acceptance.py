@@ -168,7 +168,7 @@ class TestAcceptance:
         assert result.video_out.suffix == ".mp4"
 
     def test_compress_produces_video_compressed(self, tmp_path):
-        """compress=True -> result.video_compressed is Path named <stem>_compressed.mp4."""
+        """compress_ratio=0.4 -> result.video_compressed is Path named <stem>_compressed.mp4."""
         src = tmp_path / "meeting.mp4"
         src.write_bytes(b"fake video")
 
@@ -193,7 +193,7 @@ class TestAcceptance:
             from wx4.pipeline import Pipeline, build_steps
 
             ctx = PipelineContext(src=src)
-            steps = build_steps(PipelineConfig(skip_enhance=True, compress=True))
+            steps = build_steps(PipelineConfig(skip_enhance=True, compress_ratio=0.4))
             pipeline = Pipeline(steps)
             result = pipeline.run(ctx)
 
@@ -201,7 +201,7 @@ class TestAcceptance:
         assert result.video_compressed.name == "meeting_compressed.mp4"
 
     def test_pipeline_without_compress_leaves_video_compressed_none(self, tmp_path):
-        """compress=False (default) -> result.video_compressed is None."""
+        """compress_ratio=None (default) -> result.video_compressed is None."""
         src = tmp_path / "audio.mp3"
         src.write_bytes(b"audio")
 
@@ -213,7 +213,7 @@ class TestAcceptance:
             from wx4.pipeline import Pipeline, build_steps
 
             ctx = PipelineContext(src=src)
-            steps = build_steps(PipelineConfig(skip_enhance=True, compress=False))
+            steps = build_steps(PipelineConfig(skip_enhance=True, compress_ratio=None))
             pipeline = Pipeline(steps)
             result = pipeline.run(ctx)
 
