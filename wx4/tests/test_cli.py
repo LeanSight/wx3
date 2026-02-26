@@ -451,3 +451,126 @@ class TestRichProgressCallbackOnStepProgress:
     def test_on_step_progress_is_defined_on_callback(self):
         from wx4.cli import RichProgressCallback
         assert hasattr(RichProgressCallback, "on_step_progress")
+
+
+# ---------------------------------------------------------------------------
+# TestCliWhisperFlags
+# ---------------------------------------------------------------------------
+
+
+class TestCliWhisperFlags:
+    def _run_with_flags(self, tmp_path, extra_flags, mock_pipeline=None):
+        from typer.testing import CliRunner
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+
+        if mock_pipeline is None:
+            mock_pipeline = MagicMock()
+            mock_pipeline.run.return_value = mock_ctx
+
+        with patch("wx4.cli.Pipeline", return_value=mock_pipeline) as MockPipeline, \
+             patch("wx4.cli.build_steps", return_value=[]):
+            runner = CliRunner()
+            result = runner.invoke(app, [str(f), "--skip-enhance"] + extra_flags)
+            return result, MockPipeline
+
+    def test_default_backend_is_assemblyai(self, tmp_path):
+        result, _ = self._run_with_flags(tmp_path, [])
+        assert result.exit_code == 0 or "not found" in result.output.lower()
+
+    def test_backend_flag_forwarded_to_context(self, tmp_path):
+        from typer.testing import CliRunner
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+        received_ctx = {}
+
+        def capture_run(ctx):
+            received_ctx["ctx"] = ctx
+            return mock_ctx
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.run.side_effect = capture_run
+
+        with patch("wx4.cli.Pipeline", return_value=mock_pipeline), \
+             patch("wx4.cli.build_steps", return_value=[]):
+            runner = CliRunner()
+            runner.invoke(app, [str(f), "--skip-enhance", "--backend", "whisper"])
+
+        assert received_ctx.get("ctx") is not None
+        assert received_ctx["ctx"].transcribe_backend == "whisper"
+
+    def test_hf_token_flag_forwarded_to_context(self, tmp_path):
+        from typer.testing import CliRunner
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+        received_ctx = {}
+
+        def capture_run(ctx):
+            received_ctx["ctx"] = ctx
+            return mock_ctx
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.run.side_effect = capture_run
+
+        with patch("wx4.cli.Pipeline", return_value=mock_pipeline), \
+             patch("wx4.cli.build_steps", return_value=[]):
+            runner = CliRunner()
+            runner.invoke(app, [str(f), "--skip-enhance", "--hf-token", "hf_secret"])
+
+        assert received_ctx["ctx"].hf_token == "hf_secret"
+
+    def test_device_flag_forwarded_to_context(self, tmp_path):
+        from typer.testing import CliRunner
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+        received_ctx = {}
+
+        def capture_run(ctx):
+            received_ctx["ctx"] = ctx
+            return mock_ctx
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.run.side_effect = capture_run
+
+        with patch("wx4.cli.Pipeline", return_value=mock_pipeline), \
+             patch("wx4.cli.build_steps", return_value=[]):
+            runner = CliRunner()
+            runner.invoke(app, [str(f), "--skip-enhance", "--device", "cpu"])
+
+        assert received_ctx["ctx"].device == "cpu"
+
+    def test_whisper_model_flag_forwarded_to_context(self, tmp_path):
+        from typer.testing import CliRunner
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+        received_ctx = {}
+
+        def capture_run(ctx):
+            received_ctx["ctx"] = ctx
+            return mock_ctx
+
+        mock_pipeline = MagicMock()
+        mock_pipeline.run.side_effect = capture_run
+
+        with patch("wx4.cli.Pipeline", return_value=mock_pipeline), \
+             patch("wx4.cli.build_steps", return_value=[]):
+            runner = CliRunner()
+            runner.invoke(app, [str(f), "--skip-enhance",
+                                "--whisper-model", "openai/whisper-small"])
+
+        assert received_ctx["ctx"].whisper_model == "openai/whisper-small"

@@ -85,6 +85,18 @@ def main(
     compress_encoder: Optional[str] = typer.Option(
         None, "--compress-encoder", help="Force video encoder: cpu, h264_nvenc, h264_amf, h264_qsv"
     ),
+    backend: str = typer.Option(
+        "assemblyai", "--backend", help="Transcription backend: assemblyai or whisper"
+    ),
+    hf_token: Optional[str] = typer.Option(
+        None, "--hf-token", help="HuggingFace token for PyAnnote diarization (whisper backend)"
+    ),
+    device: str = typer.Option(
+        "auto", "--device", help="Compute device for Whisper: auto, cpu, cuda, mps"
+    ),
+    whisper_model: str = typer.Option(
+        "openai/whisper-large-v3", "--whisper-model", help="Whisper model identifier"
+    ),
 ) -> None:
     if not files:
         typer.echo(ctx.get_help())
@@ -136,6 +148,10 @@ def main(
                 compress_ratio=compress_ratio,
                 compress_encoder=compress_encoder,
                 cv=cv,
+                transcribe_backend=backend,
+                hf_token=hf_token,
+                device=device,
+                whisper_model=whisper_model,
             )
             pipeline_ctx = pipeline.run(pipeline_ctx)
             results.append(pipeline_ctx)
