@@ -586,6 +586,8 @@ class TestUIBehavior:
 
         assert "audio.mp3" in tree.plain
 
+        cb._live.stop()
+
 
 def test_progress_widget_has_bar_column():
     """Progress widget should include BarColumn for visual progress."""
