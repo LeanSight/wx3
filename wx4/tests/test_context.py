@@ -158,3 +158,42 @@ class TestPipelineContextWhisperFields:
 
         ctx = PipelineContext(src=tmp_path / "test.wav", device="cpu")
         assert ctx.device == "cpu"
+
+
+class TestIntermediateConstants:
+    def test_intermediate_by_step_has_required_keys(self):
+        from wx4.context import INTERMEDIATE_BY_STEP
+
+        assert "normalize" in INTERMEDIATE_BY_STEP
+        assert "enhance" in INTERMEDIATE_BY_STEP
+        assert "transcribe" in INTERMEDIATE_BY_STEP
+        assert "srt" in INTERMEDIATE_BY_STEP
+        assert "video" in INTERMEDIATE_BY_STEP
+        assert "compress" in INTERMEDIATE_BY_STEP
+
+    def test_intermediate_by_step_values_have_correct_formats(self):
+        from wx4.context import INTERMEDIATE_BY_STEP
+
+        assert INTERMEDIATE_BY_STEP["normalize"] == "_normalized.m4a"
+        assert INTERMEDIATE_BY_STEP["enhance"] == "_enhanced.m4a"
+        assert INTERMEDIATE_BY_STEP["transcribe"] == "_timestamps.json"
+        assert INTERMEDIATE_BY_STEP["srt"] == "_timestamps.srt"
+        assert INTERMEDIATE_BY_STEP["video"] == "_timestamps.mp4"
+        assert INTERMEDIATE_BY_STEP["compress"] == "_compressed.mp4"
+
+    def test_intermediate_patterns_are_deduplicated(self):
+        from wx4.context import INTERMEDIATE_PATTERNS, INTERMEDIATE_BY_STEP
+
+        unique_values = list(dict.fromkeys(INTERMEDIATE_BY_STEP.values()))
+        assert len(INTERMEDIATE_PATTERNS) == len(unique_values)
+        assert list(INTERMEDIATE_PATTERNS) == unique_values
+
+    def test_intermediate_patterns_contains_all_intermediates(self):
+        from wx4.context import INTERMEDIATE_PATTERNS
+
+        assert "_normalized.m4a" in INTERMEDIATE_PATTERNS
+        assert "_enhanced.m4a" in INTERMEDIATE_PATTERNS
+        assert "_timestamps.json" in INTERMEDIATE_PATTERNS
+        assert "_timestamps.srt" in INTERMEDIATE_PATTERNS
+        assert "_timestamps.mp4" in INTERMEDIATE_PATTERNS
+        assert "_compressed.mp4" in INTERMEDIATE_PATTERNS

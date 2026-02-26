@@ -25,10 +25,17 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 import ffmpeg
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 # ---------------------------------------------------------------------------
 # Logging & consola
@@ -57,9 +64,9 @@ MAX_GAIN_DB = 30.0
 # Encoders HW por prioridad de detección
 # Los extra_kwargs se pasan directamente a ffmpeg-python como **kwargs
 HW_ENCODERS: list[tuple[str, str, dict]] = [
-    ("h264_nvenc",        "NVIDIA NVENC",       {"preset": "p4", "rc": "vbr"}),
-    ("h264_amf",          "AMD AMF",            {"quality": "balanced"}),
-    ("h264_qsv",          "Intel QuickSync",    {"preset": "medium"}),
+    ("h264_nvenc", "NVIDIA NVENC", {"preset": "p4", "rc": "vbr"}),
+    ("h264_amf", "AMD AMF", {"quality": "balanced"}),
+    ("h264_qsv", "Intel QuickSync", {"preset": "medium"}),
     ("h264_videotoolbox", "Apple VideoToolbox", {}),
 ]
 CPU_ENCODER: tuple[str, str, dict] = ("libx264", "CPU x264", {"preset": "medium"})
@@ -67,6 +74,7 @@ CPU_ENCODER: tuple[str, str, dict] = ("libx264", "CPU x264", {"preset": "medium"
 # ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class VideoInfo:
@@ -135,12 +143,15 @@ def expand_inputs(inputs: list[Path]) -> list[Path]:
 # Probe — ffmpeg-python
 # ---------------------------------------------------------------------------
 
+
 def probe_video(path: Path) -> VideoInfo:
     """Extrae metadata del video con ffprobe via ffmpeg-python."""
     try:
         data = ffmpeg.probe(str(path))
     except ffmpeg.Error as e:
-        raise RuntimeError(f"ffprobe falló para '{path.name}':\n{e.stderr.decode(errors='replace')}")
+        raise RuntimeError(
+            f"ffprobe falló para '{path.name}':\n{e.stderr.decode(errors='replace')}"
+        )
 
     fmt = data["format"]
     video_stream = next(
@@ -166,6 +177,7 @@ def probe_video(path: Path) -> VideoInfo:
 # Medición LUFS — patrón extraído de wx4/audio_normalize.py
 # ---------------------------------------------------------------------------
 
+
 def measure_audio_lufs(path: Path) -> float:
     """
     Mide la loudness integrada del audio con el filtro loudnorm de FFmpeg.
@@ -173,10 +185,8 @@ def measure_audio_lufs(path: Path) -> float:
     """
     try:
         _, stderr = (
-            ffmpeg
-            .input(str(path))
-            .audio
-            .output("-", format="null", af="loudnorm=print_format=json")
+            ffmpeg.input(str(path))
+            .audio.output("-", format="null", af="loudnorm=print_format=json")
             .run(capture_stdout=True, capture_stderr=True)
         )
         m = re.search(rb'"input_i"\s*:\s*"([^"]+)"', stderr)
@@ -193,12 +203,12 @@ def measure_audio_lufs(path: Path) -> float:
 # Detección de hardware — ffmpeg-python
 # ---------------------------------------------------------------------------
 
+
 def _encoder_works(encoder_name: str) -> bool:
     """Prueba el encoder generando 1 frame nulo. Rápido (~1s por encoder)."""
     try:
         (
-            ffmpeg
-            .input("nullsrc=s=64x64:d=0.1", f="lavfi")
+            ffmpeg.input("nullsrc=s=64x64:d=0.1", f="lavfi")
             .output("-", vcodec=encoder_name, vframes=1, f="null")
             .run(capture_stdout=True, capture_stderr=True)
         )
@@ -236,6 +246,7 @@ def detect_best_encoder(force: str | None = None) -> EncoderInfo:
 # Cálculo de bitrate
 # ---------------------------------------------------------------------------
 
+
 def calculate_video_bitrate(info: VideoInfo, target_ratio: float) -> int:
     """Calcula el bitrate de video en kbps para alcanzar el ratio objetivo."""
     target_bytes = info.size_bytes * target_ratio
@@ -246,6 +257,7 @@ def calculate_video_bitrate(info: VideoInfo, target_ratio: float) -> int:
 # ---------------------------------------------------------------------------
 # Progress Rich — patrón estándar 2026
 # ---------------------------------------------------------------------------
+
 
 def _make_progress() -> Progress:
     """
@@ -266,21 +278,18 @@ def _make_progress() -> Progress:
 def _run_with_progress(
     stream,
     duration_s: float,
-    progress: Progress,
+    progress: Progress | None,
     description: str,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> None:
     """
-    Ejecuta un stream ffmpeg-python actualizando Rich Progress en tiempo real.
+    Ejecuta un stream ffmpeg-python.
 
-    Usa `-progress pipe:1` para recibir métricas de FFmpeg línea a línea.
-    `out_time_ms` reporta microsegundos (nombre confuso pero es el estándar FFmpeg).
+    Si progress_callback está definido, se usa para reportar progreso.
+    Si no hay callback ni progress, no se muestra progreso.
     """
-    task = progress.add_task(description, total=100)
-
-    process = (
-        stream
-        .global_args("-progress", "pipe:1", "-nostats")
-        .run_async(pipe_stdout=True, pipe_stderr=True)
+    process = stream.global_args("-progress", "pipe:1", "-nostats").run_async(
+        pipe_stdout=True, pipe_stderr=True
     )
 
     while True:
@@ -295,11 +304,14 @@ def _run_with_progress(
         if key == "out_time_ms":
             try:
                 elapsed_s = int(value) / 1_000_000  # microsegundos → segundos
-                progress.update(task, completed=min(elapsed_s / duration_s * 100, 99.9))
+                percent = min(int(elapsed_s / duration_s * 100), 99)
+                if progress_callback:
+                    progress_callback(percent, 100)
             except ValueError:
                 pass
         elif key == "progress" and value == "end":
-            progress.update(task, completed=100)
+            if progress_callback:
+                progress_callback(100, 100)
             break
 
     process.wait()
@@ -314,6 +326,7 @@ def _run_with_progress(
 # ---------------------------------------------------------------------------
 # Construcción de streams — ffmpeg-python
 # ---------------------------------------------------------------------------
+
 
 def _apply_lufs_filter(audio_stream, lufs: LufsInfo):
     """Aplica el filtro volume si la ganancia es significativa (> 0.1 dB)."""
@@ -356,11 +369,9 @@ def _build_encode_stream(
 
     if pass_number == 1:
         # Primera pasada: solo video → null, sin audio
-        return (
-            ffmpeg
-            .output(inp.video, null_out, f="null", **video_kwargs)
-            .overwrite_output()
-        )
+        return ffmpeg.output(
+            inp.video, null_out, f="null", **video_kwargs
+        ).overwrite_output()
 
     # Pasada 2 o 1-pass: incluye audio con LUFS + faststart
     video_kwargs["movflags"] = "+faststart"
@@ -368,22 +379,19 @@ def _build_encode_stream(
 
     if info.has_audio:
         audio = _apply_lufs_filter(inp.audio, lufs)
-        return (
-            ffmpeg
-            .output(inp.video, audio, str(output_path), **video_kwargs, **audio_kwargs)
-            .overwrite_output()
-        )
+        return ffmpeg.output(
+            inp.video, audio, str(output_path), **video_kwargs, **audio_kwargs
+        ).overwrite_output()
     else:
-        return (
-            ffmpeg
-            .output(inp.video, str(output_path), **video_kwargs)
-            .overwrite_output()
-        )
+        return ffmpeg.output(
+            inp.video, str(output_path), **video_kwargs
+        ).overwrite_output()
 
 
 # ---------------------------------------------------------------------------
 # Compresión principal
 # ---------------------------------------------------------------------------
+
 
 def compress_video(
     info: VideoInfo,
@@ -391,34 +399,67 @@ def compress_video(
     encoder: EncoderInfo,
     video_bitrate_kbps: int,
     output_path: Path,
+    progress_callback: "Callable[[int, int], None] | None" = None,
 ) -> None:
     """
     Comprime el video con normalización LUFS integrada como filtro de audio.
 
     - libx264 (CPU): 2-pass para máxima precisión de tamaño
     - Encoders HW:   1-pass VBR (los drivers HW no soportan 2-pass de forma fiable)
+
+    Args:
+        progress_callback: Optional callback(done, total) to report progress.
+            When provided, no internal Progress display is created.
     """
     use_two_pass = encoder.ffmpeg_name == "libx264"
     passlogfile = str(output_path.parent / f".{output_path.stem}_ffpass")
 
-    with _make_progress() as progress:
-        if use_two_pass:
-            pass1 = _build_encode_stream(
-                info, lufs, encoder, video_bitrate_kbps,
-                output_path, pass_number=1, passlogfile=passlogfile,
-            )
-            _run_with_progress(pass1, info.duration_s, progress, "Analizando    [pasada 1/2]")
+    # Los steps NUNCA deben generar Progress. Si no hay callback, no se muestra progreso.
+    if use_two_pass:
+        pass1 = _build_encode_stream(
+            info,
+            lufs,
+            encoder,
+            video_bitrate_kbps,
+            output_path,
+            pass_number=1,
+            passlogfile=passlogfile,
+        )
+        _run_with_progress(
+            pass1,
+            info.duration_s,
+            None,  # Sin Progress interno
+            "Analizando    [pasada 1/2]",
+            progress_callback=progress_callback,
+        )
 
-            pass2 = _build_encode_stream(
-                info, lufs, encoder, video_bitrate_kbps,
-                output_path, pass_number=2, passlogfile=passlogfile,
-            )
-            _run_with_progress(pass2, info.duration_s, progress, "Codificando   [pasada 2/2]")
-        else:
-            stream = _build_encode_stream(
-                info, lufs, encoder, video_bitrate_kbps, output_path
-            )
-            _run_with_progress(stream, info.duration_s, progress, "Codificando   [hardware]  ")
+        pass2 = _build_encode_stream(
+            info,
+            lufs,
+            encoder,
+            video_bitrate_kbps,
+            output_path,
+            pass_number=2,
+            passlogfile=passlogfile,
+        )
+        _run_with_progress(
+            pass2,
+            info.duration_s,
+            None,
+            "Codificando   [pasada 2/2]",
+            progress_callback=progress_callback,
+        )
+    else:
+        stream = _build_encode_stream(
+            info, lufs, encoder, video_bitrate_kbps, output_path
+        )
+        _run_with_progress(
+            stream,
+            info.duration_s,
+            None,
+            "Codificando   [hardware]  ",
+            progress_callback=progress_callback,
+        )
 
     # Limpieza de archivos temporales de 2-pass
     for suffix in (".log", ".log.mbtree"):
@@ -431,15 +472,16 @@ def compress_video(
 # Resumen final
 # ---------------------------------------------------------------------------
 
+
 def print_summary(
     info: VideoInfo,
     lufs: LufsInfo,
     output_path: Path,
     target_ratio: float,
 ) -> None:
-    original_mb  = info.size_bytes / 1_048_576
-    final_bytes  = output_path.stat().st_size
-    final_mb     = final_bytes / 1_048_576
+    original_mb = info.size_bytes / 1_048_576
+    final_bytes = output_path.stat().st_size
+    final_mb = final_bytes / 1_048_576
     actual_ratio = final_bytes / info.size_bytes
 
     if lufs.is_silent or not info.has_audio:
@@ -453,7 +495,9 @@ def print_summary(
     console.print()
     console.print("=" * 54)
     console.print(f"  📁 Original:  {original_mb:.1f} MB")
-    console.print(f"  🎯 Objetivo:  {original_mb * target_ratio:.1f} MB  ({target_ratio * 100:.0f}%)")
+    console.print(
+        f"  🎯 Objetivo:  {original_mb * target_ratio:.1f} MB  ({target_ratio * 100:.0f}%)"
+    )
     console.print(f"  ✅ Resultado: {final_mb:.1f} MB  ({actual_ratio * 100:.1f}%)")
     console.print(f"  🔊 LUFS:      {audio_note}")
     console.print(f"  📄 Archivo:   {output_path.name}")
@@ -465,26 +509,38 @@ def print_summary(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Comprime video para Google Photos: LUFS + HW + progreso en tiempo real.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("input", type=Path, nargs='+', help="Video(s) de entrada (acepta glob, ej: *.mp4)")
     parser.add_argument(
-        "--ratio", type=float, default=0.40,
+        "input",
+        type=Path,
+        nargs="+",
+        help="Video(s) de entrada (acepta glob, ej: *.mp4)",
+    )
+    parser.add_argument(
+        "--ratio",
+        type=float,
+        default=0.40,
         help="Fracción del tamaño original (0.40 = 40%%)",
     )
     parser.add_argument(
-        "--encoder", default=None,
+        "--encoder",
+        default=None,
         help="Forzar encoder: 'cpu', 'h264_nvenc', 'h264_amf', 'h264_qsv'",
     )
     parser.add_argument(
-        "--output", type=Path, default=None,
+        "--output",
+        type=Path,
+        default=None,
         help="Ruta de salida (por defecto: <nombre>_compressed.mp4)",
     )
     parser.add_argument(
-        "--no-normalize", action="store_true",
+        "--no-normalize",
+        action="store_true",
         help="Omitir normalización LUFS del audio",
     )
     return parser.parse_args()
@@ -510,8 +566,10 @@ def main() -> None:
             log.error("Archivo no encontrado: %s", input_path)
             continue
 
-        output_path = args.output if args.output else (
-            input_path.parent / f"{input_path.stem}_compressed.mp4"
+        output_path = (
+            args.output
+            if args.output
+            else (input_path.parent / f"{input_path.stem}_compressed.mp4")
         )
 
         # 1. Analizar video
@@ -519,13 +577,18 @@ def main() -> None:
         info = probe_video(input_path)
         log.info(
             "Resolucion: %dx%d | %.1fs | %.1f MB",
-            info.width, info.height, info.duration_s, info.size_bytes / 1_048_576,
+            info.width,
+            info.height,
+            info.duration_s,
+            info.size_bytes / 1_048_576,
         )
 
         # 2. Medir LUFS del audio
         if args.no_normalize or not info.has_audio:
             lufs = LufsInfo.noop()
-            reason = "sin audio" if not info.has_audio else "desactivada por --no-normalize"
+            reason = (
+                "sin audio" if not info.has_audio else "desactivada por --no-normalize"
+            )
             log.info("Normalizacion LUFS: %s", reason)
         else:
             log.info("Midiendo loudness del audio...")
@@ -536,7 +599,9 @@ def main() -> None:
             else:
                 log.info(
                     "LUFS: %.1f -> %.0f (ganancia: %+.1f dB)",
-                    lufs.measured_lufs, TARGET_LUFS, lufs.gain_db,
+                    lufs.measured_lufs,
+                    TARGET_LUFS,
+                    lufs.gain_db,
                 )
 
         # 3. Detectar encoder (mismo encoder para todos)
@@ -546,7 +611,8 @@ def main() -> None:
         video_bitrate = calculate_video_bitrate(info, args.ratio)
         log.info(
             "Bitrate -> video: %d kbps | audio: %d kbps",
-            video_bitrate, AUDIO_BITRATE_KBPS,
+            video_bitrate,
+            AUDIO_BITRATE_KBPS,
         )
 
         # 5. Comprimir

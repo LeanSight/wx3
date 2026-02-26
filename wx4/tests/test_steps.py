@@ -718,6 +718,21 @@ class TestCompressStep:
 
         patches["_compress_video"].assert_called_once()
 
+    def test_passes_step_progress_callback_to_compress_video(self, tmp_path):
+        """compress_step should pass ctx.step_progress as progress_callback."""
+        from wx4.steps import compress_step
+
+        ctx = _ctx(tmp_path)
+        ctx.step_progress = MagicMock()
+        patches = _compress_patches(_video_info())
+
+        with patch.multiple("wx4.steps", **patches):
+            compress_step(ctx)
+
+        call_kwargs = patches["_compress_video"].call_args.kwargs
+        assert "progress_callback" in call_kwargs
+        assert call_kwargs["progress_callback"] == ctx.step_progress
+
     def test_sets_video_compressed_on_ctx(self, tmp_path):
         ctx = _ctx(tmp_path)
         patches = _compress_patches(_video_info())

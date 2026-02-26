@@ -61,3 +61,19 @@ class PipelineContext:
 
 
 Step = Callable[[PipelineContext], PipelineContext]
+
+
+# UNICA FUENTE DE VERDAD para archivos intermedios del pipeline
+# Mapea step -> (sufijo + extension del archivo intermedio generado)
+INTERMEDIATE_BY_STEP = {
+    "normalize": "_normalized.m4a",
+    "enhance": "_enhanced.m4a",
+    "transcribe": "_timestamps.json",
+    "transcript": "_transcript.txt",
+    "srt": "_timestamps.srt",
+    "video": "_timestamps.mp4",
+    "compress": "_compressed.mp4",
+}
+
+# Sufijos unicos (deduplicados) para filtrado de archivos
+INTERMEDIATE_PATTERNS = tuple(dict.fromkeys(INTERMEDIATE_BY_STEP.values()))

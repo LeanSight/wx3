@@ -23,7 +23,7 @@ from wx4.compress_video import (
     measure_audio_lufs,
     probe_video,
 )
-from wx4.context import PipelineContext
+from wx4.context import INTERMEDIATE_BY_STEP, PipelineContext
 from wx4.format_srt import words_to_srt
 from wx4.transcribe_aai import transcribe_assemblyai
 from wx4.video_black import audio_to_black_video
@@ -57,7 +57,9 @@ def cache_check_step(ctx: PipelineContext) -> PipelineContext:
     if cached:
         enhanced = ctx.src.parent / cached["output"]
         if enhanced.exists():
-            normalized = ctx.src.parent / f"{ctx.src.stem}_normalized.m4a"
+            normalized = (
+                ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['normalize']}"
+            )
             return dataclasses.replace(
                 ctx,
                 enhanced=enhanced,
@@ -91,7 +93,7 @@ def normalize_step(ctx: PipelineContext) -> PipelineContext:
     stem = ctx.src.stem
     d = ctx.src.parent
     ext = "m4a" if ctx.output_m4a else "wav"
-    out = d / f"{stem}_normalized.{ext}"
+    out = d / f"{stem}{INTERMEDIATE_BY_STEP['normalize']}"
 
     if out.exists():
         return dataclasses.replace(
@@ -147,7 +149,7 @@ def enhance_step(ctx: PipelineContext) -> PipelineContext:
     d = ctx.src.parent
     tmp_enh = d / f"{stem}._tmp_enh.wav"
     ext = "m4a" if ctx.output_m4a else "wav"
-    out = d / f"{stem}_enhanced.{ext}"
+    out = d / f"{stem}{INTERMEDIATE_BY_STEP['enhance']}"
 
     audio_input = ctx.normalized if ctx.normalized is not None else ctx.src
 
@@ -287,7 +289,7 @@ def video_step(ctx: PipelineContext) -> PipelineContext:
         if ctx.enhanced is not None
         else (ctx.normalized if ctx.normalized is not None else ctx.src)
     )
-    out = audio.parent / f"{audio.stem}_timestamps.mp4"
+    out = audio.parent / f"{audio.stem}{INTERMEDIATE_BY_STEP['video']}"
 
     if not audio_to_black_video(audio, out):
         raise RuntimeError(f"audio_to_black_video failed for {audio.name}")
@@ -319,7 +321,7 @@ def _compress_video_from_audio(audio: Path, video: Path, compress_ratio: float) 
 
     encoder = detect_best_encoder(force=None)
     bitrate = calculate_video_bitrate(info, compress_ratio)
-    compressed = video.parent / f"{video.stem}_compressed.mp4"
+    compressed = video.parent / f"{video.stem}{INTERMEDIATE_BY_STEP['compress']}"
     _compress_video(info, lufs, encoder, bitrate, compressed)
     compressed.rename(video)
 
@@ -337,7 +339,7 @@ def compress_step(ctx: PipelineContext) -> PipelineContext:
     """
     t0 = time.time()
     src = ctx.src
-    out = src.parent / f"{src.stem}_compressed.mp4"
+    out = src.parent / f"{src.stem}{INTERMEDIATE_BY_STEP['compress']}"
 
     audio_source = ctx.enhanced if ctx.enhanced is not None else src
 
@@ -348,6 +350,9 @@ def compress_step(ctx: PipelineContext) -> PipelineContext:
             f"compress_step: {src.name} is not a video file or probe failed: {exc}"
         ) from exc
 
+    if ctx.step_progress:
+        ctx.step_progress(0, 100)
+
     if info.has_audio:
         measured = measure_audio_lufs(audio_source)
         lufs = LufsInfo.from_measured(measured)
@@ -356,7 +361,9 @@ def compress_step(ctx: PipelineContext) -> PipelineContext:
 
     encoder = detect_best_encoder(force=None)
     bitrate = calculate_video_bitrate(info, ctx.compress_ratio)
-    _compress_video(info, lufs, encoder, bitrate, out)
+    _compress_video(
+        info, lufs, encoder, bitrate, out, progress_callback=ctx.step_progress
+    )
 
     return dataclasses.replace(
         ctx, video_compressed=out, timings={**ctx.timings, "compress": time.time() - t0}
