@@ -203,6 +203,50 @@ class TestAcceptance:
         assert audio_used == normalized
         assert result.video_out is not None
 
+    def test_video_output_with_compression(self, tmp_path):
+        """videooutput=True + compress_ratio: genera video con audio mejorado + comprimido."""
+        src = tmp_path / "audio.mp3"
+        src.write_bytes(b"audio")
+        enhanced = tmp_path / "audio_enhanced.m4a"
+        enhanced.write_bytes(b"enhanced")
+
+        mock_info = MagicMock()
+        mock_info.has_audio = True
+        compressed_path = tmp_path / "audio_enhanced_timestamps_compressed.mp4"
+        compressed_path.write_bytes(b"video")
+
+        with (
+            patch("wx4.steps.audio_to_black_video", return_value=True) as m_video,
+            patch("wx4.steps._compress_video", return_value=None),
+            patch("wx4.steps.probe_video", return_value=mock_info),
+            patch("wx4.steps.measure_audio_lufs", return_value=-20.0),
+            patch("wx4.steps.LufsInfo") as mock_lufs,
+            patch("wx4.steps.detect_best_encoder", return_value=MagicMock()),
+            patch("wx4.steps.calculate_video_bitrate") as m_bitrate,
+        ):
+            mock_lufs.from_measured.return_value = MagicMock()
+            mock_lufs.noop.return_value = MagicMock()
+            m_bitrate.return_value = 500_000
+
+            from wx4.context import PipelineContext
+            from wx4.steps import video_step
+
+            ctx = PipelineContext(
+                src=src,
+                enhanced=enhanced,
+                compress_ratio=0.3,
+            )
+            result = video_step(ctx)
+
+        m_video.assert_called_once()
+        audio_used = m_video.call_args[0][0]
+        assert audio_used == enhanced
+
+        m_bitrate.assert_called_once_with(mock_info, 0.3)
+
+        assert result.video_out is not None
+        assert result.video_out.name.endswith("_timestamps.mp4")
+
     def test_compress_produces_video_compressed(self, tmp_path):
         """compress_ratio=0.4 -> result.video_compressed is Path named <stem>_compressed.mp4."""
         src = tmp_path / "meeting.mp4"

@@ -278,6 +278,7 @@ def srt_step(ctx: PipelineContext) -> PipelineContext:
 def video_step(ctx: PipelineContext) -> PipelineContext:
     """
     Generate black-video MP4 from the enhanced (or normalized or src) audio.
+    If compress_ratio is set, also compress the output video.
     Raises RuntimeError if audio_to_black_video fails.
     """
     t0 = time.time()
@@ -291,9 +292,36 @@ def video_step(ctx: PipelineContext) -> PipelineContext:
     if not audio_to_black_video(audio, out):
         raise RuntimeError(f"audio_to_black_video failed for {audio.name}")
 
+    if ctx.compress_ratio is not None:
+        _compress_video_from_audio(audio, out, ctx.compress_ratio)
+
     return dataclasses.replace(
         ctx, video_out=out, timings={**ctx.timings, "video": time.time() - t0}
     )
+
+
+def _compress_video_from_audio(audio: Path, video: Path, compress_ratio: float) -> None:
+    """
+    Compress video using the same audio track.
+    """
+    try:
+        info = probe_video(video)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"_compress_video_from_audio: {video.name} probe failed: {exc}"
+        ) from exc
+
+    if info.has_audio:
+        measured = measure_audio_lufs(video)
+        lufs = LufsInfo.from_measured(measured)
+    else:
+        lufs = LufsInfo.noop()
+
+    encoder = detect_best_encoder(force=None)
+    bitrate = calculate_video_bitrate(info, compress_ratio)
+    compressed = video.parent / f"{video.stem}_compressed.mp4"
+    _compress_video(info, lufs, encoder, bitrate, compressed)
+    compressed.rename(video)
 
 
 # ---------------------------------------------------------------------------

@@ -69,7 +69,7 @@ class TestPipelineContext:
         assert ctx.video_out is None
         assert ctx.cache_hit is False
         assert ctx.cv is None
-        assert ctx.compress_ratio == 0.40
+        assert ctx.compress_ratio is None
         assert ctx.video_compressed is None
 
     def test_replace_creates_new_instance(self, tmp_path):

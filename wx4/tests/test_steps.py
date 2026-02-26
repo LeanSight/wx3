@@ -6,7 +6,7 @@ All external calls are mocked via patch.
 import dataclasses
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
 
@@ -532,6 +532,83 @@ class TestVideoStep:
 
             result = video_step(ctx)
         assert "video" in result.timings
+
+    def test_video_step_with_compress_uses_enhanced_audio(self, tmp_path):
+        """When compress_ratio is set, video_step calls _compress_video with enhanced audio."""
+        enhanced = tmp_path / "audio_enhanced.m4a"
+        ctx = _ctx(tmp_path, enhanced=enhanced, compress_ratio=0.3)
+
+        mock_info = MagicMock()
+        mock_info.has_audio = True
+
+        with (
+            patch("wx4.steps.audio_to_black_video", return_value=True) as m_video,
+            patch("wx4.steps._compress_video") as m_compress,
+            patch("wx4.steps.probe_video", return_value=mock_info),
+            patch("wx4.steps.measure_audio_lufs", return_value=-20.0),
+            patch("wx4.steps.LufsInfo") as mock_lufs,
+            patch("wx4.steps.detect_best_encoder", return_value=MagicMock()),
+            patch("wx4.steps.calculate_video_bitrate") as m_bitrate,
+        ):
+            m_bitrate.return_value = 500_000
+            mock_lufs.from_measured.return_value = MagicMock()
+            mock_lufs.noop.return_value = MagicMock()
+
+            from wx4.steps import video_step
+
+            try:
+                result = video_step(ctx)
+            except FileNotFoundError:
+                pass
+
+        m_video.assert_called_once_with(enhanced, ANY)
+        m_bitrate.assert_called_once_with(mock_info, 0.3)
+        m_compress.assert_called_once()
+
+    def test_video_step_compression_ratio_applied(self, tmp_path):
+        """compress_ratio is passed to _compress_video via calculate_video_bitrate."""
+        ctx = _ctx(tmp_path, compress_ratio=0.5)
+
+        mock_info = MagicMock()
+        mock_info.has_audio = True
+
+        with (
+            patch("wx4.steps.audio_to_black_video", return_value=True),
+            patch("wx4.steps._compress_video") as m_compress,
+            patch("wx4.steps.probe_video", return_value=mock_info),
+            patch("wx4.steps.measure_audio_lufs", return_value=-20.0),
+            patch("wx4.steps.LufsInfo") as mock_lufs,
+            patch("wx4.steps.detect_best_encoder", return_value=MagicMock()),
+            patch("wx4.steps.calculate_video_bitrate") as m_bitrate,
+        ):
+            m_bitrate.return_value = 500_000
+            mock_lufs.from_measured.return_value = MagicMock()
+            mock_lufs.noop.return_value = MagicMock()
+
+            from wx4.steps import video_step
+
+            try:
+                video_step(ctx)
+            except FileNotFoundError:
+                pass
+
+        m_bitrate.assert_called_once_with(mock_info, 0.5)
+        m_compress.assert_called_once()
+
+    def test_video_step_no_compress_when_ratio_none(self, tmp_path):
+        """When compress_ratio is None, _compress_video is not called."""
+        ctx = _ctx(tmp_path, compress_ratio=None)
+
+        with (
+            patch("wx4.steps.audio_to_black_video", return_value=True) as m_video,
+            patch("wx4.steps._compress_video") as m_compress,
+        ):
+            from wx4.steps import video_step
+
+            video_step(ctx)
+
+        m_video.assert_called_once()
+        m_compress.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

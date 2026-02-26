@@ -36,7 +36,7 @@ class PipelineContext:
     language: Optional[str] = None
     speakers: Optional[int] = None
     speaker_names: Dict[str, str] = field(default_factory=dict)
-    compress_ratio: float = 0.40
+    compress_ratio: Optional[float] = None
     video_compressed: Optional[Path] = None
 
     cv: Any = None

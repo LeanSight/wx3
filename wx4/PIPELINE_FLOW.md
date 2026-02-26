@@ -68,12 +68,13 @@ Input: [audio/video file]
 │    video_step       │  ←── (--video-output)
 │   (optional)        │     Genera video con audio transcrito
 │                     │     INPUT: ctx.enhanced > ctx.normalized > ctx.src
+│                     │     Si compress_ratio: comprime el video generado
 └─────────────────────┘
     │
     ▼
 ┌─────────────────────┐
-│  compress_step      │  ←── (--compress 0.4)
-│   (optional)        │     Comprime video de salida
+│  compress_step      │  ←── (--compress 0.4) - solo para videos originales
+│   (optional)        │     Comprime video de entrada con audio mejorado
 └─────────────────────┘
     │
     ▼
@@ -88,16 +89,22 @@ Output: [*.srt, *.mp4 (optional), *.mp4 (compressed, optional)]
 │ FLAGS           │ PIPELINE STEPS ACTIVE                                       │
 ├─────────────────┼──────────────────────────────────────────────────────────────┤
 │ (none)          │ cache_check → normalize → enhance → cache_save →           │
-│                 │ transcribe → srt → [video] → [compress]                   │
+│                 │ transcribe → srt                                            │
 ├─────────────────┼──────────────────────────────────────────────────────────────┤
 │ --no-normalize  │ cache_check → enhance → cache_save →                       │
-│                 │ transcribe → srt → [video] → [compress]                    │
+│                 │ transcribe → srt                                            │
 ├─────────────────┼──────────────────────────────────────────────────────────────┤
 │ --no-enhance    │ cache_check → normalize → cache_save →                     │
-│                 │ transcribe → srt → [video] → [compress]                   │
+│                 │ transcribe → srt                                            │
 ├─────────────────┼──────────────────────────────────────────────────────────────┤
-│ --no-normalize  │ transcribe → srt → [video] → [compress]                   │
+│ --no-normalize  │ transcribe → srt                                            │
 │ --no-enhance    │                                                              │
+├─────────────────┼──────────────────────────────────────────────────────────────┤
+│ --video-output  │ + video_step (con audio mejorado)                           │
+│ (+ --compress)   │ + compresion integrada en video_step si --compress           │
+├─────────────────┼──────────────────────────────────────────────────────────────┤
+│ --compress solo  │ compress_step (para videos originales)                     │
+│ (video input)    │                                                              │
 ├─────────────────┼──────────────────────────────────────────────────────────────┤
 │ --force         │ Ignora cache, reprocesa todo                                │
 └─────────────────┴──────────────────────────────────────────────────────────────┘
