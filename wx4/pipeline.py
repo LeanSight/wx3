@@ -52,52 +52,61 @@ class Pipeline:
         for cb in self.callbacks:
             cb.on_pipeline_start(names, ctx)
 
-        for step in self.steps:
-            out = step.output_path(ctx) if isinstance(step, NamedStep) else None
+        try:
+            for step in self.steps:
+                out = step.output_path(ctx) if isinstance(step, NamedStep) else None
 
-            if out is not None and not ctx.force and out.exists():
+                if out is not None and not ctx.force and out.exists():
+                    for cb in self.callbacks:
+                        cb.on_step_skipped(step.name, ctx)
+                    continue
+
+                name = (
+                    step.name
+                    if isinstance(step, NamedStep)
+                    else getattr(step, "__name__", repr(step))
+                )
+                # Inject a per-step progress forwarder so steps can report chunk progress
+                ctx = dataclasses.replace(ctx, step_progress=self._make_step_progress(name))
                 for cb in self.callbacks:
-                    cb.on_step_skipped(step.name, ctx)
-                continue
-
-            name = (
-                step.name
-                if isinstance(step, NamedStep)
-                else getattr(step, "__name__", repr(step))
-            )
-            # Inject a per-step progress forwarder so steps can report chunk progress
-            ctx = dataclasses.replace(ctx, step_progress=self._make_step_progress(name))
+                    cb.on_step_start(name, ctx)
+                ctx = step(ctx)
+                for cb in self.callbacks:
+                    cb.on_step_end(name, ctx)
+        finally:
             for cb in self.callbacks:
-                cb.on_step_start(name, ctx)
-            ctx = step(ctx)
-            for cb in self.callbacks:
-                cb.on_step_end(name, ctx)
-
-        for cb in self.callbacks:
-            cb.on_pipeline_end(ctx)
+                cb.on_pipeline_end(ctx)
 
         return ctx
 
 
-# Output path lambdas for build_steps()
-_ENHANCE_OUT = lambda ctx: ctx.src.parent / f"{ctx.src.stem}_enhanced.m4a"
-_NORMALIZE_OUT = lambda ctx: ctx.src.parent / f"{ctx.src.stem}_normalized.m4a"
-_COMPRESS_OUT = lambda ctx: ctx.src.parent / f"{ctx.src.stem}_compressed.mp4"
+# Output path lambdas for build_steps() - usa constantes de context.py
+from wx4.context import INTERMEDIATE_BY_STEP
+
+_ENHANCE_OUT = lambda ctx: (
+    ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['enhance']}"
+)
+_NORMALIZE_OUT = lambda ctx: (
+    ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['normalize']}"
+)
+_COMPRESS_OUT = lambda ctx: (
+    ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['compress']}"
+)
 
 
 def _transcript_json(ctx: PipelineContext) -> Path:
     audio = ctx.enhanced if ctx.enhanced is not None else ctx.src
-    return audio.parent / f"{audio.stem}_timestamps.json"
+    return audio.parent / f"{audio.stem}{INTERMEDIATE_BY_STEP['transcribe']}"
 
 
 def _srt_out(ctx: PipelineContext) -> Path:
     audio = ctx.enhanced if ctx.enhanced is not None else ctx.src
-    return audio.parent / f"{audio.stem}_timestamps.srt"
+    return audio.parent / f"{audio.stem}{INTERMEDIATE_BY_STEP['srt']}"
 
 
 def _video_out(ctx: PipelineContext) -> Path:
     audio = ctx.enhanced if ctx.enhanced is not None else ctx.src
-    return audio.parent / f"{audio.stem}_timestamps.mp4"
+    return audio.parent / f"{audio.stem}{INTERMEDIATE_BY_STEP['video']}"
 
 
 def build_steps(config: PipelineConfig | None = None) -> List[NamedStep]:

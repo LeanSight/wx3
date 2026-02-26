@@ -29,7 +29,7 @@ from wx4.speakers import parse_speakers_map
 _CV_MODEL = "MossFormer2_SE_48K"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
-console = Console()
+console = Console(markup=True, force_terminal=True)
 
 
 def _get_secret(
@@ -50,56 +50,125 @@ def _get_secret(
     return None
 
 
+# Import ffprobe for media detection
+import ffmpeg
+
+# Extension fallback para archivos de audio/video validos
+_AUDIO_EXTENSIONS = {".mp4", ".mp3", ".m4a", ".wav", ".avi", ".mov", ".flac"}
+
+
+def _is_intermediate_file(path: Path) -> bool:
+    """Detecta archivos intermedios generados por el pipeline."""
+    from wx4.context import INTERMEDIATE_PATTERNS
+
+    return any(path.name.endswith(p) for p in INTERMEDIATE_PATTERNS)
+
+
+def _has_video_stream(path: Path) -> bool | None:
+    """Usa ffprobe para detectar si tiene stream de video. None si error."""
+    try:
+        data = ffmpeg.probe(str(path))
+        return any(s["codec_type"] == "video" for s in data["streams"])
+    except Exception:
+        return None
+
+
+def _is_processable_file(path: Path) -> bool:
+    """Es archivo de audio/video valido? (ffprobe para detectar tipo)."""
+    if not path.is_file():
+        return False
+    if _is_intermediate_file(path):
+        return False
+    result = _has_video_stream(path)
+    if result is None:
+        return path.suffix.lower() in _AUDIO_EXTENSIONS
+    return True
+
+
+def _expand_paths(paths: List[str]) -> List[Path]:
+    """Expande paths - directorios a archivos de audio/video validos (recursivo)."""
+    expanded = []
+    for p in paths:
+        src = Path(p)
+        if src.is_dir():
+            for f in src.rglob("*"):  # recursive glob
+                if f.is_file() and _is_processable_file(f):
+                    expanded.append(f)
+        elif src.is_file():
+            expanded.append(src)
+    return sorted(expanded, key=lambda x: x.name)
+
+
 class RichProgressCallback:
     """Hierarchical pipeline view with file name and step states."""
+
+    # ASCII characters for Windows compatibility
+    _PENDING = "o"
+    _RUNNING = ">"
+    _COMPLETE = "x"
+    _SKIPPED = "-"
 
     def __init__(self, console: Console, progress: Progress) -> None:
         self._console = console
         self._progress = progress
         self._current_file: Path | None = None
         self._step_names: List[str] = []
-        self._step_states: Dict[str, str] = {}  # pending, running, complete, skipped
+        self._step_states: Dict[str, str] = {}
         self._current_step: str | None = None
         self._progress_task: TaskID | None = None
+        self._progress_completed: Dict[str, int] = {}
+        self._live = None
 
-    def _render_panel(self) -> Panel:
-        """Render the hierarchical view panel."""
+    def _render_tree(self) -> Text:
+        """Render hierarchical view as indented tree."""
         lines = []
         for name in self._step_names:
             state = self._step_states.get(name, "pending")
             if state == "running":
-                line = f"[cyan]>[/cyan] {name}"
+                icon = f"[cyan]{self._RUNNING}[/cyan]"
+                percent = self._progress_completed.get(name, 0)
+                name_with_percent = f"{name} {percent}%" if percent > 0 else name
             elif state == "complete":
-                line = f"[green]✓[/green] {name}"
+                icon = f"[green]{self._COMPLETE}[/green]"
+                name_with_percent = name
             elif state == "skipped":
-                line = f"[dim]○[/dim] {name} [dim](skipped)[/dim]"
+                icon = f"[dim]{self._SKIPPED}[/dim]"
+                name_with_percent = name
             else:
-                line = f"[dim]○[/dim] {name}"
-            lines.append(line)
-
-        content = Text("\n".join(lines))
-        title = (
-            f"[bold cyan]{self._current_file.name}[/bold cyan]"
-            if self._current_file
-            else ""
-        )
-        return Panel(content, title=title, border_style="blue", padding=(0, 1))
+                icon = f"[dim]{self._PENDING}[/dim]"
+                name_with_percent = name
+            lines.append(f"  {icon} {name_with_percent}")
+        return Text.from_markup("\n".join(lines))
 
     def on_pipeline_start(self, step_names: List[str], ctx: PipelineContext) -> None:
         self._current_file = ctx.src
         self._step_names = step_names
         self._step_states = {name: "pending" for name in step_names}
-        self._console.print(self._render_panel())
+
+        # Start Live for smooth updates
+        self._live = Live(
+            self._render_tree(),
+            console=self._console,
+            refresh_per_second=4,
+            transient=False,
+        )
+        self._live.start()
 
     def on_step_start(self, name: str, ctx: PipelineContext) -> None:
         self._current_step = name
         self._step_states[name] = "running"
-        self._progress_task = self._progress.add_task(f"  {name}", total=None)
-        self._console.print(self._render_panel())
+        self._progress_task = self._progress.add_task(f"  {name}", total=100)
+        if self._live:
+            self._live.update(self._render_tree())
 
     def on_step_progress(self, name: str, done: int, total: int) -> None:
-        if self._progress_task is not None and total > 0:
-            self._progress.update(self._progress_task, total=total, completed=done)
+        if total > 0:
+            percent = int(done * 100 / total)
+            self._progress_completed[name] = percent
+            if self._progress_task is not None:
+                self._progress.update(self._progress_task, total=total, completed=done)
+            if self._live:
+                self._live.update(self._render_tree())
 
     def on_step_end(self, name: str, ctx: PipelineContext) -> None:
         self._step_states[name] = "complete"
@@ -107,14 +176,19 @@ class RichProgressCallback:
         if self._progress_task is not None:
             self._progress.update(self._progress_task, visible=False)
             self._progress_task = None
-        self._console.print(self._render_panel())
+        if self._live:
+            self._live.update(self._render_tree())
 
     def on_step_skipped(self, name: str, ctx: PipelineContext) -> None:
         self._step_states[name] = "skipped"
-        self._console.print(self._render_panel())
+        if self._live:
+            self._live.update(self._render_tree())
 
     def on_pipeline_end(self, ctx: PipelineContext) -> None:
-        self._console.print(self._render_panel())
+        if self._live:
+            self._live.update(self._render_tree())
+            self._live.stop()
+            self._live = None
 
 
 @app.command()
@@ -180,6 +254,11 @@ def main(
         typer.echo(ctx.get_help())
         raise typer.Exit()
 
+    files = _expand_paths(files)
+    if not files:
+        console.print("No se encontraron archivos de audio/video para procesar")
+        raise typer.Exit()
+
     api_key = _get_secret(api_key, "ASSEMBLY_AI_KEY", required=True)
     if api_key:
         os.environ["ASSEMBLY_AI_KEY"] = api_key
@@ -203,39 +282,36 @@ def main(
         cv = ClearVoice(task="speech_enhancement", model_names=[_CV_MODEL])
 
     results = []
-    with Progress(
+    # Progress para step progress (no usa Live internamente)
+    progress = Progress(
         SpinnerColumn(),
         TextColumn("{task.description}"),
-        TimeElapsedColumn(),
-        BarColumn(),
-        transient=True,
         console=console,
-    ) as progress:
-        cb = RichProgressCallback(console, progress)
-        pipeline = Pipeline(steps, callbacks=[cb])
+    )
+    cb = RichProgressCallback(console, progress)
+    pipeline = Pipeline(steps, callbacks=[cb])
 
-        for file_str in files:
-            src = Path(file_str)
-            if not src.exists():
-                console.print(f"File not found: {src}")
-                continue
+    for src in files:
+        if not src.exists():
+            console.print(f"File not found: {src}")
+            continue
 
-            pipeline_ctx = PipelineContext(
-                src=src,
-                srt_mode=srt_mode,
-                language=language,
-                speakers=speakers,
-                speaker_names=speaker_names,
-                force=force,
-                compress_ratio=compress if compress is not None else 0.40,
-                cv=cv,
-                transcribe_backend=backend,
-                hf_token=hf_token,
-                device=device,
-                whisper_model=whisper_model,
-            )
-            pipeline_ctx = pipeline.run(pipeline_ctx)
-            results.append(pipeline_ctx)
+        pipeline_ctx = PipelineContext(
+            src=src,
+            srt_mode=srt_mode,
+            language=language,
+            speakers=speakers,
+            speaker_names=speaker_names,
+            force=force,
+            compress_ratio=compress if compress is not None else 0.40,
+            cv=cv,
+            transcribe_backend=backend,
+            hf_token=hf_token,
+            device=device,
+            whisper_model=whisper_model,
+        )
+        pipeline_ctx = pipeline.run(pipeline_ctx)
+        results.append(pipeline_ctx)
 
     table = Table(title="Summary", box=box.ASCII)
     table.add_column("File")

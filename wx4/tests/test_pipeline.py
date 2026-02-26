@@ -197,6 +197,26 @@ class TestPipelineCallbacks:
         Pipeline([NamedStep(name="s", fn=lambda c: c)], callbacks=[cb]).run(ctx)
         cb.on_pipeline_end.assert_called_once()
 
+    def test_on_pipeline_end_called_on_keyboard_interrupt(self, tmp_path):
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        cb = _make_cb()
+        step = NamedStep(name="boom", fn=MagicMock(side_effect=KeyboardInterrupt()))
+        with pytest.raises(KeyboardInterrupt):
+            Pipeline([step], callbacks=[cb]).run(ctx)
+        cb.on_pipeline_end.assert_called_once()
+
+    def test_on_pipeline_end_called_on_runtime_error(self, tmp_path):
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        cb = _make_cb()
+        step = NamedStep(name="boom", fn=MagicMock(side_effect=RuntimeError("oops")))
+        with pytest.raises(RuntimeError):
+            Pipeline([step], callbacks=[cb]).run(ctx)
+        cb.on_pipeline_end.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # TestPipelineResume
