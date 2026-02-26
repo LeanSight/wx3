@@ -332,11 +332,14 @@ def _compress_video_from_audio(audio: Path, video: Path, compress_ratio: float) 
 def compress_step(ctx: PipelineContext) -> PipelineContext:
     """
     Compress the original source video using compress_video routines.
+    If ctx.enhanced exists, uses its audio instead of the video's original audio.
     Raises RuntimeError if src is not a video file or probe fails.
     """
     t0 = time.time()
     src = ctx.src
     out = src.parent / f"{src.stem}_compressed.mp4"
+
+    audio_source = ctx.enhanced if ctx.enhanced is not None else src
 
     try:
         info = probe_video(src)
@@ -346,7 +349,7 @@ def compress_step(ctx: PipelineContext) -> PipelineContext:
         ) from exc
 
     if info.has_audio:
-        measured = measure_audio_lufs(src)
+        measured = measure_audio_lufs(audio_source)
         lufs = LufsInfo.from_measured(measured)
     else:
         lufs = LufsInfo.noop()

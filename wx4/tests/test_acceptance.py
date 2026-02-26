@@ -247,6 +247,35 @@ class TestAcceptance:
         assert result.video_out is not None
         assert result.video_out.name.endswith("_timestamps.mp4")
 
+    def test_compress_step_uses_enhanced_audio_when_exists(self, tmp_path):
+        """compress_step debe usar *_enhanced.m4a si existe, no el audio del video original."""
+        src = tmp_path / "meeting.mp4"
+        src.write_bytes(b"fake video")
+        enhanced = tmp_path / "meeting_enhanced.m4a"
+        enhanced.write_bytes(b"enhanced audio")
+
+        mock_info = MagicMock()
+        mock_info.has_audio = True
+        mock_lufs_cls = MagicMock()
+        mock_lufs_cls.from_measured.return_value = MagicMock()
+        mock_lufs_cls.noop.return_value = MagicMock()
+
+        with (
+            patch("wx4.steps.measure_audio_lufs") as m_lufs,
+            patch("wx4.steps.probe_video", return_value=mock_info),
+            patch("wx4.steps.LufsInfo", mock_lufs_cls),
+            patch("wx4.steps.detect_best_encoder", return_value=MagicMock()),
+            patch("wx4.steps.calculate_video_bitrate", return_value=500_000),
+            patch("wx4.steps._compress_video"),
+        ):
+            from wx4.context import PipelineContext
+            from wx4.steps import compress_step
+
+            ctx = PipelineContext(src=src, enhanced=enhanced, compress_ratio=0.4)
+            compress_step(ctx)
+
+        m_lufs.assert_called_once_with(enhanced)
+
     def test_compress_produces_video_compressed(self, tmp_path):
         """compress_ratio=0.4 -> result.video_compressed is Path named <stem>_compressed.mp4."""
         src = tmp_path / "meeting.mp4"
