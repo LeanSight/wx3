@@ -52,6 +52,51 @@ class TestCli:
 
         mock_pipeline.run.assert_called_once()
 
+    def test_no_normalize_flag_forwarded(self, tmp_path):
+        from typer.testing import CliRunner
+
+        from wx4.cli import app
+        from wx4.context import PipelineConfig
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps") as mock_build,
+        ):
+            MockPipeline.return_value.run.return_value = mock_ctx
+            mock_build.return_value = []
+            runner = CliRunner()
+            runner.invoke(app, [str(f), "--no-normalize"])
+
+        config = mock_build.call_args.args[0]
+        assert isinstance(config, PipelineConfig)
+        assert config.skip_normalize is True
+
+    def test_no_normalize_without_no_enhance_keeps_enhance(self, tmp_path):
+        from typer.testing import CliRunner
+
+        from wx4.cli import app
+        from wx4.context import PipelineConfig
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps") as mock_build,
+        ):
+            MockPipeline.return_value.run.return_value = mock_ctx
+            mock_build.return_value = []
+            runner = CliRunner()
+            runner.invoke(app, [str(f), "--no-normalize"])
+
+        config = mock_build.call_args.args[0]
+        assert config.skip_enhance is False
+
     def test_skip_enhance_flag_forwarded(self, tmp_path):
         from typer.testing import CliRunner
 

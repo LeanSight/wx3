@@ -8,7 +8,13 @@ from typing import List, Optional
 import typer
 from rich import box
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
 
 from wx4.context import PipelineConfig, PipelineContext
@@ -59,7 +65,9 @@ class RichProgressCallback:
 @app.command()
 def main(
     ctx: typer.Context,
-    files: Optional[List[str]] = typer.Argument(default=None, help="Audio/video files to process"),
+    files: Optional[List[str]] = typer.Argument(
+        default=None, help="Audio/video files to process"
+    ),
     language: Optional[str] = typer.Option(
         None, "--language", "-l", help="Language code (e.g. es, en). Default: auto"
     ),
@@ -67,43 +75,64 @@ def main(
         None, "--speakers", "-s", help="Expected number of speakers. Default: auto"
     ),
     srt_mode: str = typer.Option(
-        "speaker-only", "--srt-mode", help="SRT grouping mode: 'speaker-only' or 'sentences'"
+        "speaker-only",
+        "--srt-mode",
+        help="SRT grouping mode: 'speaker-only' or 'sentences'",
     ),
     speakers_map: Optional[str] = typer.Option(
         None, "--speakers-map", help="Speaker name map, e.g. 'A=Marcel,B=Agustin'"
     ),
-    skip_enhance: bool = typer.Option(False, "--no-enhance", help="Skip ClearVoice audio enhancement"),
+    skip_normalize: bool = typer.Option(
+        False, "--no-normalize", help="Skip LUFS audio normalization"
+    ),
+    skip_enhance: bool = typer.Option(
+        False, "--no-enhance", help="Skip ClearVoice audio enhancement"
+    ),
     force: bool = typer.Option(False, "--force", help="Force re-process cached files"),
-    videooutput: bool = typer.Option(False, "--video-output", help="Generate output MP4"),
+    videooutput: bool = typer.Option(
+        False, "--video-output", help="Generate output MP4"
+    ),
     api_key: Optional[str] = typer.Option(
-        None, "--assemblyai-api-key", help="AssemblyAI API key (or set ASSEMBLY_AI_KEY env var)"
+        None,
+        "--assemblyai-api-key",
+        help="AssemblyAI API key (or set ASSEMBLY_AI_KEY env var)",
     ),
     compress: Optional[float] = typer.Option(
-        None, "--compress", help="Compress source video to ratio (e.g. --compress 0.4 = 40%% of original size)"
+        None,
+        "--compress",
+        help="Compress source video to ratio (e.g. --compress 0.4 = 40%% of original size)",
     ),
     backend: str = typer.Option(
         "assemblyai", "--backend", help="Transcription backend: assemblyai or whisper"
     ),
     hf_token: Optional[str] = typer.Option(
-        None, "--whisper-hf-token", help="HuggingFace token for PyAnnote diarization (whisper backend)"
+        None,
+        "--whisper-hf-token",
+        help="HuggingFace token for PyAnnote diarization (whisper backend)",
     ),
     device: str = typer.Option(
-        "auto", "--whisper-device", help="Compute device: auto, cpu, cuda, mps (whisper backend)"
+        "auto",
+        "--whisper-device",
+        help="Compute device: auto, cpu, cuda, mps (whisper backend)",
     ),
     whisper_model: str = typer.Option(
-        "openai/whisper-large-v3", "--whisper-model", help="Whisper model identifier (whisper backend)"
+        "openai/whisper-large-v3",
+        "--whisper-model",
+        help="Whisper model identifier (whisper backend)",
     ),
 ) -> None:
     if not files:
         typer.echo(ctx.get_help())
         raise typer.Exit()
-    
+
     if api_key:
         import os
+
         os.environ["ASSEMBLY_AI_KEY"] = api_key
-    
+
     speaker_names = parse_speakers_map(speakers_map)
     config = PipelineConfig(
+        skip_normalize=skip_normalize,
         skip_enhance=skip_enhance,
         videooutput=videooutput,
         compress_ratio=compress,
@@ -113,6 +142,7 @@ def main(
     cv = None
     if not skip_enhance:
         from clearvoice import ClearVoice
+
         console.print(f"Loading {_CV_MODEL}...")
         cv = ClearVoice(task="speech_enhancement", model_names=[_CV_MODEL])
 
@@ -157,7 +187,9 @@ def main(
     table.add_column("Compressed")
     for result_ctx in results:
         srt_name = result_ctx.srt.name if result_ctx.srt else "N/A"
-        compressed = result_ctx.video_compressed.name if result_ctx.video_compressed else "-"
+        compressed = (
+            result_ctx.video_compressed.name if result_ctx.video_compressed else "-"
+        )
         table.add_row(result_ctx.src.name, srt_name, compressed)
     console.print(table)
 
