@@ -46,8 +46,10 @@ Input: [audio/video file]
 │                     │
 │ BACKEND:           │
 │ --backend          │
-│ --assemblyai-key  │
-│ --whisper-*        │
+│ --assemblyai-api-key│
+│ --pyannote-hf-token│  ←── Para diarizacion (PyAnnote)
+│ --whisper-model   │
+│ --whisper-device  │
 └─────────────────────┘
     │
     ▼
@@ -122,3 +124,26 @@ Output: [*.srt, *.mp4 (optional), *.mp4 (compressed, optional)]
   Priority: --no-enhance=false → enhanced
             --no-enhance=true + --no-normalize=false → normalized  
             --no-enhance=true + --no-normalize=true → src
+
+
+══════════════════════════════════════════════════════════════════════════════════
+
+## API Keys - Secret Handling
+
+### Priority: argument > environment variable
+
+| Secret | Flag | Env Var | Required |
+|--------|------|---------|----------|
+| AssemblyAI | `--assemblyai-api-key` | `ASSEMBLY_AI_KEY` | Yes |
+| PyAnnote (diarization) | `--pyannote-hf-token` | `HF_TOKEN` | No |
+
+```
+Argument > Environment Variable > Error (if required)
+```
+
+### Backend Selection
+
+```
+--backend assemblyai  → transcribe_assemblyai (requires ASSEMBLY_AI_KEY)
+--backend whisper    → transcribe_with_whisper (local, requires HF_TOKEN for PyAnnote diarization)
+```
