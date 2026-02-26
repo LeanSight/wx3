@@ -615,3 +615,82 @@ class TestCliWhisperFlags:
             )
 
         assert received_ctx["ctx"].whisper_model == "openai/whisper-small"
+
+
+# ---------------------------------------------------------------------------
+# TestCliHierarchicalView - UI hierarchical display
+# ---------------------------------------------------------------------------
+
+
+class TestCliHierarchicalView:
+    """Tests for hierarchical pipeline view."""
+
+    def test_callback_receives_file_name_on_pipeline_start(self, tmp_path):
+        """on_pipeline_start should receive the file name for display."""
+        from rich.progress import Progress
+        from wx4.cli import RichProgressCallback
+
+        progress = Progress()
+        cb = RichProgressCallback(progress)
+
+        src = tmp_path / "test_audio.mp3"
+        src.write_bytes(b"audio")
+
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=src)
+
+        cb.on_pipeline_start(["normalize", "enhance", "transcribe"], ctx)
+
+        assert cb._current_file == src
+
+    def test_on_step_start_shows_step_name(self):
+        """on_step_start should show the step name in progress."""
+        from rich.progress import Progress
+        from wx4.cli import RichProgressCallback
+
+        progress = MagicMock(spec=Progress)
+        progress.add_task = MagicMock(return_value=1)
+        cb = RichProgressCallback(progress)
+
+        cb.on_step_start("enhance", MagicMock())
+
+        progress.add_task.assert_called()
+        call_args = progress.add_task.call_args[0][0]
+        assert "enhance" in call_args
+
+    def test_on_step_end_marks_step_complete(self):
+        """on_step_end should mark step as complete."""
+        from rich.progress import Progress
+        from wx4.cli import RichProgressCallback
+
+        progress = MagicMock(spec=Progress)
+        progress.add_task = MagicMock(return_value=1)
+        progress.update = MagicMock()
+        cb = RichProgressCallback(progress)
+        cb._step_task = 1
+
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=Path("/test/audio.mp3"))
+        cb.on_step_end("enhance", ctx)
+
+        progress.update.assert_called()
+
+    def test_on_step_skipped_shows_skipped_indicator(self):
+        """on_step_skipped should show skipped indicator."""
+        from rich.progress import Progress
+        from wx4.cli import RichProgressCallback
+
+        progress = MagicMock(spec=Progress)
+        progress.console = MagicMock()
+        cb = RichProgressCallback(progress)
+
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=Path("/test/audio.mp3"))
+        cb.on_step_skipped("normalize", ctx)
+
+        progress.console.print.assert_called()
+        call_args = progress.console.print.call_args[0][0]
+        assert "skip" in call_args.lower() or "normalize" in call_args.lower()

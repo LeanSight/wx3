@@ -53,9 +53,13 @@ class RichProgressCallback:
         self._p = progress
         self._overall = None
         self._step_task = None
+        self._current_file = None
 
-    def on_pipeline_start(self, step_names: List[str]) -> None:
-        self._overall = self._p.add_task("Pipeline", total=len(step_names))
+    def on_pipeline_start(self, step_names: List[str], ctx: PipelineContext) -> None:
+        self._current_file = ctx.src
+        self._overall = self._p.add_task(
+            f"[cyan]{ctx.src.name}[/cyan]", total=len(step_names)
+        )
 
     def on_step_start(self, name: str, ctx: PipelineContext) -> None:
         self._step_task = self._p.add_task(f"  {name}", total=None)

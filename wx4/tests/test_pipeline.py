@@ -131,7 +131,7 @@ class TestPipelineCallbacks:
         cb = _make_cb()
         step = NamedStep(name="alpha", fn=lambda c: c)
         Pipeline([step], callbacks=[cb]).run(ctx)
-        cb.on_pipeline_start.assert_called_once_with(["alpha"])
+        cb.on_pipeline_start.assert_called_once_with(["alpha"], ctx)
 
     def test_on_step_start_called_for_each_step(self, tmp_path):
         from wx4.pipeline import NamedStep, Pipeline
@@ -483,7 +483,7 @@ class TestStepProgressInjection:
         calls = []
 
         class ProgressCapture:
-            def on_pipeline_start(self, names):
+            def on_pipeline_start(self, names, ctx):
                 pass
 
             def on_step_start(self, name, ctx):
@@ -535,7 +535,7 @@ class TestStepProgressInjection:
         progress_names = []
 
         class NameCapture:
-            def on_pipeline_start(self, names):
+            def on_pipeline_start(self, names, ctx):
                 pass
 
             def on_step_start(self, name, ctx):

@@ -50,7 +50,7 @@ class Pipeline:
             for s in self.steps
         ]
         for cb in self.callbacks:
-            cb.on_pipeline_start(names)
+            cb.on_pipeline_start(names, ctx)
 
         for step in self.steps:
             out = step.output_path(ctx) if isinstance(step, NamedStep) else None
