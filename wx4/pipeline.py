@@ -45,7 +45,10 @@ class Pipeline:
         return _progress
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
-        names = [s.name if isinstance(s, NamedStep) else getattr(s, "__name__", repr(s)) for s in self.steps]
+        names = [
+            s.name if isinstance(s, NamedStep) else getattr(s, "__name__", repr(s))
+            for s in self.steps
+        ]
         for cb in self.callbacks:
             cb.on_pipeline_start(names)
 
@@ -57,7 +60,11 @@ class Pipeline:
                     cb.on_step_skipped(step.name, ctx)
                 continue
 
-            name = step.name if isinstance(step, NamedStep) else getattr(step, "__name__", repr(step))
+            name = (
+                step.name
+                if isinstance(step, NamedStep)
+                else getattr(step, "__name__", repr(step))
+            )
             # Inject a per-step progress forwarder so steps can report chunk progress
             ctx = dataclasses.replace(ctx, step_progress=self._make_step_progress(name))
             for cb in self.callbacks:
@@ -74,15 +81,19 @@ class Pipeline:
 
 # Output path lambdas for build_steps()
 _ENHANCE_OUT = lambda ctx: ctx.src.parent / f"{ctx.src.stem}_enhanced.m4a"
+_NORMALIZE_OUT = lambda ctx: ctx.src.parent / f"{ctx.src.stem}_normalized.m4a"
 _COMPRESS_OUT = lambda ctx: ctx.src.parent / f"{ctx.src.stem}_compressed.mp4"
+
 
 def _transcript_json(ctx: PipelineContext) -> Path:
     audio = ctx.enhanced if ctx.enhanced is not None else ctx.src
     return audio.parent / f"{audio.stem}_timestamps.json"
 
+
 def _srt_out(ctx: PipelineContext) -> Path:
     audio = ctx.enhanced if ctx.enhanced is not None else ctx.src
     return audio.parent / f"{audio.stem}_timestamps.srt"
+
 
 def _video_out(ctx: PipelineContext) -> Path:
     audio = ctx.enhanced if ctx.enhanced is not None else ctx.src
@@ -94,8 +105,12 @@ def build_steps(config: PipelineConfig | None = None) -> List[NamedStep]:
     Build the ordered list of pipeline steps based on composition config.
 
     Default order:
+      cache_check -> normalize -> enhance -> cache_save -> transcribe -> srt [-> video]
+    With config.skip_normalize=True:
       cache_check -> enhance -> cache_save -> transcribe -> srt [-> video]
     With config.skip_enhance=True:
+      transcribe -> srt [-> video]
+    With config.skip_normalize=True AND config.skip_enhance=True:
       transcribe -> srt [-> video]
     """
     if config is None:
@@ -106,6 +121,7 @@ def build_steps(config: PipelineConfig | None = None) -> List[NamedStep]:
         cache_save_step,
         compress_step,
         enhance_step,
+        normalize_step,
         srt_step,
         transcribe_step,
         video_step,
@@ -114,8 +130,9 @@ def build_steps(config: PipelineConfig | None = None) -> List[NamedStep]:
     steps: List[NamedStep] = []
 
     if not config.skip_enhance:
-        # cache_check and cache_save have no output_fn (their skip logic is internal)
         steps.append(NamedStep("cache_check", cache_check_step))
+        if not config.skip_normalize:
+            steps.append(NamedStep("normalize", normalize_step, _NORMALIZE_OUT))
         steps.append(NamedStep("enhance", enhance_step, _ENHANCE_OUT))
         steps.append(NamedStep("cache_save", cache_save_step))
 

@@ -230,6 +230,7 @@ class TestNormalizeStep:
 
     def test_skips_on_cache_hit(self, tmp_path):
         norm = tmp_path / "audio_normalized.m4a"
+        norm.write_bytes(b"normalized")
         ctx = _ctx(tmp_path, cache_hit=True, normalized=norm)
 
         with patch("wx4.steps.extract_to_wav") as m_ext:

@@ -405,6 +405,55 @@ class TestBuildSteps:
         )
         assert step.output_fn is not None
 
+    def test_default_has_normalize_step(self):
+        from wx4.pipeline import build_steps
+        from wx4.steps import normalize_step
+
+        fns = self._fns(build_steps())
+        assert normalize_step in fns
+
+    def test_skip_normalize_removes_normalize_step(self):
+        from wx4.pipeline import build_steps
+        from wx4.steps import normalize_step
+
+        fns = self._fns(build_steps(PipelineConfig(skip_normalize=True)))
+        assert normalize_step not in fns
+
+    def test_skip_normalize_keeps_enhance_step(self):
+        from wx4.pipeline import build_steps
+        from wx4.steps import enhance_step
+
+        fns = self._fns(build_steps(PipelineConfig(skip_normalize=True)))
+        assert enhance_step in fns
+
+    def test_skip_normalize_and_skip_enhance_removes_both(self):
+        from wx4.pipeline import build_steps
+        from wx4.steps import normalize_step, enhance_step
+
+        fns = self._fns(
+            build_steps(PipelineConfig(skip_normalize=True, skip_enhance=True))
+        )
+        assert normalize_step not in fns
+        assert enhance_step not in fns
+
+    def test_normalize_comes_before_enhance(self):
+        from wx4.pipeline import build_steps, NamedStep
+        from wx4.steps import normalize_step, enhance_step
+
+        steps = build_steps()
+        fns = self._fns(steps)
+        assert fns.index(normalize_step) < fns.index(enhance_step)
+
+    def test_normalize_step_has_output_fn(self):
+        from wx4.pipeline import NamedStep, build_steps
+        from wx4.steps import normalize_step
+
+        steps = build_steps()
+        norm = next(
+            s for s in steps if isinstance(s, NamedStep) and s.fn is normalize_step
+        )
+        assert norm.output_fn is not None
+
 
 # ---------------------------------------------------------------------------
 # TestStepProgressInjection

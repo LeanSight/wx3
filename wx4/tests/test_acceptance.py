@@ -46,7 +46,10 @@ class TestAcceptance:
             patch("wx4.steps.extract_to_wav", return_value=True),
             patch("wx4.steps.normalize_lufs", return_value=True),
             patch("wx4.steps.apply_clearvoice", return_value=True),
-            patch("wx4.steps.to_aac", side_effect=lambda s, d, **kw: (d.write_bytes(b"aac") or True)),
+            patch(
+                "wx4.steps.to_aac",
+                side_effect=lambda s, d, **kw: d.write_bytes(b"aac") or True,
+            ),
             patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
         ):
             from wx4.context import PipelineConfig, PipelineContext
@@ -73,7 +76,9 @@ class TestAcceptance:
         words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
-        with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock) as mock_transcribe:
+        with patch(
+            "wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock
+        ) as mock_transcribe:
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
@@ -90,6 +95,8 @@ class TestAcceptance:
         """Cache pre-populated -> apply_clearvoice is NOT called."""
         src = tmp_path / "meeting.mp3"
         src.write_bytes(b"audio")
+        normalized_path = tmp_path / "meeting_normalized.m4a"
+        normalized_path.write_bytes(b"normalized")
         enhanced_path = tmp_path / "meeting_enhanced.m4a"
         enhanced_path.write_bytes(b"enhanced")
 
@@ -97,6 +104,7 @@ class TestAcceptance:
         transcribe_mock = _make_transcribe_mock(tmp_path, "meeting_enhanced", words)
 
         from wx4.cache_io import file_key
+
         cache_data = {file_key(src): {"output": enhanced_path.name}}
 
         with (
@@ -113,6 +121,7 @@ class TestAcceptance:
             result = pipeline.run(ctx)
 
         mock_cv.assert_not_called()
+        assert result.normalized == normalized_path
         assert result.enhanced == enhanced_path
 
     def test_speaker_names_appear_in_srt(self, tmp_path):
@@ -250,13 +259,32 @@ def _make_whisper_transcribe_mock(tmp_path, stem):
     Output JSON is in AssemblyAI word-level format (start/end in ms).
     """
     words = [
-        {"text": "hola", "start": 0, "end": 400, "confidence": 1.0, "speaker": "SPEAKER_00"},
-        {"text": "mundo.", "start": 500, "end": 1000, "confidence": 1.0, "speaker": "SPEAKER_00"},
+        {
+            "text": "hola",
+            "start": 0,
+            "end": 400,
+            "confidence": 1.0,
+            "speaker": "SPEAKER_00",
+        },
+        {
+            "text": "mundo.",
+            "start": 500,
+            "end": 1000,
+            "confidence": 1.0,
+            "speaker": "SPEAKER_00",
+        },
     ]
     json_path = tmp_path / f"{stem}_timestamps.json"
     txt_path = tmp_path / f"{stem}_transcript.txt"
 
-    def _side_effect(audio, lang=None, speakers=None, hf_token=None, device="auto", whisper_model=None):
+    def _side_effect(
+        audio,
+        lang=None,
+        speakers=None,
+        hf_token=None,
+        device="auto",
+        whisper_model=None,
+    ):
         json_path.write_text(json.dumps(words), encoding="utf-8")
         txt_path.write_text("[00:00] Speaker SPEAKER_00: hola mundo.", encoding="utf-8")
         return txt_path, json_path
@@ -292,7 +320,9 @@ class TestAcceptanceWhisperBackend:
         srt_content = result.srt.read_text(encoding="utf-8")
         assert "hola" in srt_content
 
-    def test_whisper_backend_calls_transcribe_with_whisper_not_assemblyai(self, tmp_path):
+    def test_whisper_backend_calls_transcribe_with_whisper_not_assemblyai(
+        self, tmp_path
+    ):
         """
         AT-2: With backend='whisper', transcribe_assemblyai is NEVER called.
         """
@@ -300,8 +330,12 @@ class TestAcceptanceWhisperBackend:
         src.write_bytes(b"fake audio")
         transcribe_mock = _make_whisper_transcribe_mock(tmp_path, "meeting")
 
-        with patch("wx4.steps.transcribe_with_whisper", side_effect=transcribe_mock) as mock_wh, \
-             patch("wx4.steps.transcribe_assemblyai") as mock_aai:
+        with (
+            patch(
+                "wx4.steps.transcribe_with_whisper", side_effect=transcribe_mock
+            ) as mock_wh,
+            patch("wx4.steps.transcribe_assemblyai") as mock_aai,
+        ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
@@ -324,8 +358,12 @@ class TestAcceptanceWhisperBackend:
         src.write_bytes(b"fake audio")
         transcribe_mock = _make_transcribe_mock(tmp_path, "meeting")
 
-        with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock) as mock_aai, \
-             patch("wx4.steps.transcribe_with_whisper") as mock_wh:
+        with (
+            patch(
+                "wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock
+            ) as mock_aai,
+            patch("wx4.steps.transcribe_with_whisper") as mock_wh,
+        ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
@@ -345,7 +383,9 @@ class TestAcceptanceWhisperBackend:
         src.write_bytes(b"fake audio")
         transcribe_mock = _make_whisper_transcribe_mock(tmp_path, "meeting")
 
-        with patch("wx4.steps.transcribe_with_whisper", side_effect=transcribe_mock) as mock_wh:
+        with patch(
+            "wx4.steps.transcribe_with_whisper", side_effect=transcribe_mock
+        ) as mock_wh:
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 

@@ -38,6 +38,7 @@ def cache_check_step(ctx: PipelineContext) -> PipelineContext:
     """
     Check if src is already in the enhance cache.
     Sets cache_hit=True and enhanced=<path> on hit.
+    Also sets normalized=<path> if the normalized file exists.
     force=True always produces a miss.
     """
     t0 = time.time()
@@ -56,9 +57,11 @@ def cache_check_step(ctx: PipelineContext) -> PipelineContext:
     if cached:
         enhanced = ctx.src.parent / cached["output"]
         if enhanced.exists():
+            normalized = ctx.src.parent / f"{ctx.src.stem}_normalized.m4a"
             return dataclasses.replace(
                 ctx,
                 enhanced=enhanced,
+                normalized=normalized if normalized.exists() else None,
                 cache_hit=True,
                 cache=cache,
                 timings={**ctx.timings, "cache_check": time.time() - t0},
@@ -80,22 +83,23 @@ def cache_check_step(ctx: PipelineContext) -> PipelineContext:
 def normalize_step(ctx: PipelineContext) -> PipelineContext:
     """
     Run normalization: extract -> normalize LUFS -> encode.
-    Returns immediately (with timing) if cache_hit is already True.
+    Returns immediately (with timing) if normalized file already exists.
     Raises RuntimeError if extract or encode fails.
     """
     t0 = time.time()
 
-    if ctx.cache_hit and ctx.normalized is not None:
-        return dataclasses.replace(
-            ctx, timings={**ctx.timings, "normalize": time.time() - t0}
-        )
-
     stem = ctx.src.stem
     d = ctx.src.parent
-    tmp_raw = d / f"{stem}._tmp_raw.wav"
-    tmp_norm = d / f"{stem}._tmp_norm.wav"
     ext = "m4a" if ctx.output_m4a else "wav"
     out = d / f"{stem}_normalized.{ext}"
+
+    if out.exists():
+        return dataclasses.replace(
+            ctx, normalized=out, timings={**ctx.timings, "normalize": time.time() - t0}
+        )
+
+    tmp_raw = d / f"{stem}._tmp_raw.wav"
+    tmp_norm = d / f"{stem}._tmp_norm.wav"
 
     try:
         if not extract_to_wav(ctx.src, tmp_raw):
