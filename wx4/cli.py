@@ -4,19 +4,23 @@ Typer + Rich CLI for wx4 pipeline.
 
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import typer
 from rich import box
 from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
 from rich.progress import (
     BarColumn,
     Progress,
     SpinnerColumn,
+    TaskID,
     TextColumn,
     TimeElapsedColumn,
 )
 from rich.table import Table
+from rich.text import Text
 
 from wx4.context import PipelineConfig, PipelineContext
 from wx4.pipeline import Pipeline, build_steps
@@ -47,42 +51,70 @@ def _get_secret(
 
 
 class RichProgressCallback:
-    """Satisfies PipelineCallback via duck typing."""
+    """Hierarchical pipeline view with file name and step states."""
 
-    def __init__(self, progress: Progress) -> None:
-        self._p = progress
-        self._overall = None
-        self._step_task = None
-        self._current_file = None
+    def __init__(self, console: Console, progress: Progress) -> None:
+        self._console = console
+        self._progress = progress
+        self._current_file: Path | None = None
+        self._step_names: List[str] = []
+        self._step_states: Dict[str, str] = {}  # pending, running, complete, skipped
+        self._current_step: str | None = None
+        self._progress_task: TaskID | None = None
+
+    def _render_panel(self) -> Panel:
+        """Render the hierarchical view panel."""
+        lines = []
+        for name in self._step_names:
+            state = self._step_states.get(name, "pending")
+            if state == "running":
+                line = f"[cyan]>[/cyan] {name}"
+            elif state == "complete":
+                line = f"[green]✓[/green] {name}"
+            elif state == "skipped":
+                line = f"[dim]○[/dim] {name} [dim](skipped)[/dim]"
+            else:
+                line = f"[dim]○[/dim] {name}"
+            lines.append(line)
+
+        content = Text("\n".join(lines))
+        title = (
+            f"[bold cyan]{self._current_file.name}[/bold cyan]"
+            if self._current_file
+            else ""
+        )
+        return Panel(content, title=title, border_style="blue", padding=(0, 1))
 
     def on_pipeline_start(self, step_names: List[str], ctx: PipelineContext) -> None:
         self._current_file = ctx.src
-        self._overall = self._p.add_task(
-            f"[cyan]{ctx.src.name}[/cyan]", total=len(step_names)
-        )
+        self._step_names = step_names
+        self._step_states = {name: "pending" for name in step_names}
+        self._console.print(self._render_panel())
 
     def on_step_start(self, name: str, ctx: PipelineContext) -> None:
-        self._step_task = self._p.add_task(f"  {name}", total=None)
+        self._current_step = name
+        self._step_states[name] = "running"
+        self._progress_task = self._progress.add_task(f"  {name}", total=None)
+        self._console.print(self._render_panel())
 
     def on_step_progress(self, name: str, done: int, total: int) -> None:
-        """Update the current step's progress bar with chunk-level granularity."""
-        if self._step_task is not None:
-            self._p.update(self._step_task, total=total, completed=done)
+        if self._progress_task is not None and total > 0:
+            self._progress.update(self._progress_task, total=total, completed=done)
 
     def on_step_end(self, name: str, ctx: PipelineContext) -> None:
-        if self._step_task is not None:
-            self._p.update(self._step_task, visible=False)
-            self._step_task = None
-        if self._overall is not None:
-            self._p.update(self._overall, advance=1)
+        self._step_states[name] = "complete"
+        self._current_step = None
+        if self._progress_task is not None:
+            self._progress.update(self._progress_task, visible=False)
+            self._progress_task = None
+        self._console.print(self._render_panel())
 
     def on_step_skipped(self, name: str, ctx: PipelineContext) -> None:
-        self._p.console.print(f"  [dim]{name}: already done, skipping[/dim]")
-        if self._overall is not None:
-            self._p.update(self._overall, advance=1)
+        self._step_states[name] = "skipped"
+        self._console.print(self._render_panel())
 
     def on_pipeline_end(self, ctx: PipelineContext) -> None:
-        pass
+        self._console.print(self._render_panel())
 
 
 @app.command()
@@ -179,7 +211,7 @@ def main(
         transient=True,
         console=console,
     ) as progress:
-        cb = RichProgressCallback(progress)
+        cb = RichProgressCallback(console, progress)
         pipeline = Pipeline(steps, callbacks=[cb])
 
         for file_str in files:
