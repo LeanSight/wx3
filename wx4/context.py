@@ -12,6 +12,7 @@ class PipelineConfig:
     """Build-time pipeline composition flags. Immutable after construction."""
 
     skip_enhance: bool = False
+    skip_normalize: bool = False
     videooutput: bool = False
     compress_ratio: Optional[float] = None  # None = no compression
 

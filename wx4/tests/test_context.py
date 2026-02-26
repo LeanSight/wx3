@@ -31,6 +31,17 @@ class TestPipelineConfig:
         assert cfg.videooutput is True
         assert cfg.compress_ratio == 0.4
 
+    def test_skip_normalize_defaults_to_false(self):
+        from wx4.context import PipelineConfig
+
+        assert PipelineConfig().skip_normalize is False
+
+    def test_can_set_skip_normalize(self):
+        from wx4.context import PipelineConfig
+
+        cfg = PipelineConfig(skip_normalize=True)
+        assert cfg.skip_normalize is True
+
 
 class TestPipelineContext:
     def test_minimal_construction_with_src(self, tmp_path):
