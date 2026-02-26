@@ -38,7 +38,28 @@
 
 - Un slice = un commit = un push
 - Nunca avanzar al slice N+1 si el slice N no esta en GREEN
+
+
+### Tests existentes y cambios de comportamiento
+
 - Los tests de slices anteriores no deben regresar a RED
-- Si un cambio rompe un test existente, corregir el test en el mismo slice
-  solo si el comportamiento cambia intencionalmente; de lo contrario,
-  diagnosticar y corregir el codigo de produccion
+- Si un cambio de codigo rompe un test existente:
+
+  a) **Comportamiento cambio intencionalmente** -> 
+     CORREGIR el test en el mismo slice para reflejar el nuevo comportamiento (pasa a RED, y de ahi se corrige siguiendo TDD)
+  
+  b) **Comportamiento no deberia cambiar** -> 
+     DIAGNOSTICAR y corregir el codigo de produccion (el test esta correcto, pero detecta RED y debe pasar a GREEN)
+
+- Esta regla aplica a cualquier cambio de comportamiento
+
+
+## Ejemplo: Tests existentes + Cambio de comportamiento
+
+Cuando cambias el comportamiento de una funcionalidad (no solo UI):
+- El test existente verifica el comportamiento anterior
+- El nuevo comportamiento es diferente
+- DEBES actualizar el test existente en el mismo slice
+- El test debe verificar el nuevo comportamiento, no el anterior
+
+El objetivo es que todos los tests esten siempre en GREEN.
