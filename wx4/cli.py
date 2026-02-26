@@ -62,6 +62,35 @@ def _get_secret(
     return None
 
 
+# Cache para modelos cargados lazy
+_model_cache: dict[str, object] = {}
+
+
+def _get_model(
+    name: str,
+    loader: callable,
+    console: Console,
+) -> object:
+    """
+    Carga un modelo de forma lazy, solo la primera vez que se necesita.
+
+    Muestra 'Loading {name}...' solo en la primera carga.
+    Cachea el modelo para usos posteriores.
+
+    Args:
+        name: Nombre del modelo para display y cache
+        loader: Funcion sin argumentos que retorna el modelo
+        console: Console para mostrar mensajes
+
+    Returns:
+        Modelo cargado (del cache o recien cargado)
+    """
+    if name not in _model_cache:
+        console.print(f"Loading {name}...")
+        _model_cache[name] = loader()
+    return _model_cache[name]
+
+
 # Import ffprobe for media detection
 import ffmpeg
 
@@ -295,8 +324,11 @@ def main(
     if not skip_enhance:
         from clearvoice import ClearVoice
 
-        console.print(f"Loading {_CV_MODEL}...")
-        cv = ClearVoice(task="speech_enhancement", model_names=[_CV_MODEL])
+        cv = _get_model(
+            _CV_MODEL,
+            lambda: ClearVoice(task="speech_enhancement", model_names=[_CV_MODEL]),
+            console,
+        )
 
     results = []
     # Progress para step progress

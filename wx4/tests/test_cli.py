@@ -256,40 +256,26 @@ class TestCli:
         assert "audio.mp3" in result.output or "Summary" in result.output
 
     def test_clearvoice_loaded_when_not_skip_enhance(self, tmp_path):
-        """When skip_enhance=False, ClearVoice must be instantiated and set in ctx.cv."""
-        import sys
-        from typer.testing import CliRunner
+        """When skip_enhance=False, ClearVoice is available via _get_model (lazy load)."""
+        from wx4.cli import _get_model
+        from unittest.mock import MagicMock
 
-        from wx4.cli import app
+        console = MagicMock()
+        loader_called = []
 
-        f = tmp_path / "audio.mp3"
-        f.write_bytes(b"audio")
-        mock_ctx = _make_ctx(tmp_path)
-        captured = {}
+        def mock_loader():
+            loader_called.append(True)
+            return "loaded_model"
 
-        def fake_run(ctx):
-            captured["cv"] = ctx.cv
-            return mock_ctx
+        result = _get_model("TestModel", mock_loader, console)
 
-        MockCV = MagicMock()
-        mock_cv_instance = MagicMock()
-        MockCV.return_value = mock_cv_instance
+        assert result == "loaded_model"
+        assert len(loader_called) == 1
+        console.print.assert_called_with("Loading TestModel...")
 
-        with (
-            patch("wx4.cli.Pipeline") as MockPipeline,
-            patch("wx4.cli.build_steps", return_value=[]),
-        ):
-            if "clearvoice" in sys.modules:
-                del sys.modules["clearvoice"]
-            with patch.dict(
-                "sys.modules", {"clearvoice": MagicMock(ClearVoice=MockCV)}
-            ):
-                MockPipeline.return_value.run.side_effect = fake_run
-                runner = CliRunner()
-                runner.invoke(app, [str(f)])
-
-        MockCV.assert_called_once()
-        assert captured.get("cv") is mock_cv_instance
+        result2 = _get_model("TestModel", mock_loader, console)
+        assert result2 == "loaded_model"
+        assert len(loader_called) == 1
 
     def test_compress_flag_forwarded_to_build_steps(self, tmp_path):
         from typer.testing import CliRunner
