@@ -28,7 +28,10 @@ class TestCli:
 
         runner = CliRunner()
         result = runner.invoke(app, [str(tmp_path / "nonexistent.wav")])
-        assert "not found" in result.output.lower() or result.exit_code != 0
+        assert (
+            "no se encontraron archivos" in result.output.lower()
+            or result.exit_code != 0
+        )
 
     def test_calls_pipeline_run_once_per_file(self, tmp_path):
         import sys
@@ -482,6 +485,107 @@ class TestRichProgressCallbackOnStepProgress:
         assert hasattr(RichProgressCallback, "on_step_progress")
 
 
+class TestRichProgressCallbackPercentageDisplay:
+    """Tests for percentage display in RichProgressCallback."""
+
+    def test_render_tree_shows_percentage_for_running_step(self, tmp_path):
+        """_render_tree should show percentage when step is running and has progress."""
+        from pathlib import Path
+        from wx4.cli import RichProgressCallback
+        from wx4.context import PipelineContext
+
+        console = MagicMock()
+        progress = MagicMock()
+        cb = RichProgressCallback(console, progress)
+
+        ctx = PipelineContext(src=Path("/test/audio.mp4"))
+        cb.on_pipeline_start(["compress", "srt"], ctx)
+
+        cb._step_states["compress"] = "running"
+        cb._progress_completed = {"compress": 45}
+
+        tree = cb._render_tree()
+
+        # _render_tree returns Text when no active task (progress_task is None)
+        from rich.text import Text
+        assert isinstance(tree, Text)
+        assert "45%" in tree.plain
+
+    def test_pending_step_shows_no_percentage(self, tmp_path):
+        """_render_tree should not show percentage for pending steps."""
+        from pathlib import Path
+        from wx4.cli import RichProgressCallback
+        from wx4.context import PipelineContext
+
+        console = MagicMock()
+        progress = MagicMock()
+        cb = RichProgressCallback(console, progress)
+
+        ctx = PipelineContext(src=Path("/test/audio.mp4"))
+        cb.on_pipeline_start(["compress", "srt"], ctx)
+
+        tree = cb._render_tree()
+
+        from rich.text import Text
+        assert isinstance(tree, Text)
+        assert "%" not in tree.plain
+        cb._live.stop()
+
+
+class TestRichProgressCallbackProgressWidget:
+    """Progress widget is embedded in Live display when a step is running."""
+
+    def _make_cb(self):
+        from rich.progress import Progress
+        from wx4.cli import RichProgressCallback
+
+        console = MagicMock()
+        progress = MagicMock(spec=Progress)
+        progress.add_task = MagicMock(return_value=42)
+        cb = RichProgressCallback(console, progress)
+        return cb, progress
+
+    def test_render_tree_returns_group_when_progress_task_active(self):
+        """When a step task is active, _render_tree returns Group(tree, progress)."""
+        from rich.console import Group
+
+        cb, progress = self._make_cb()
+        cb._step_names = ["enhance"]
+        cb._step_states = {"enhance": "running"}
+        cb._progress_task = 42
+
+        result = cb._render_tree()
+
+        assert isinstance(result, Group)
+
+    def test_render_tree_returns_text_when_no_active_task(self):
+        """When no step task is active, _render_tree returns plain Text."""
+        from rich.text import Text
+
+        cb, progress = self._make_cb()
+        cb._step_names = ["enhance"]
+        cb._step_states = {"enhance": "pending"}
+        cb._progress_task = None
+
+        result = cb._render_tree()
+
+        assert isinstance(result, Text)
+
+    def test_group_contains_progress_widget(self):
+        """The Group returned must include self._progress as a renderable."""
+        from rich.console import Group
+
+        cb, progress = self._make_cb()
+        cb._step_names = ["enhance"]
+        cb._step_states = {"enhance": "running"}
+        cb._progress_task = 42
+
+        result = cb._render_tree()
+
+        assert isinstance(result, Group)
+        assert progress in result.renderables
+
+
 # ---------------------------------------------------------------------------
 # TestCliWhisperFlags
 # ---------------------------------------------------------------------------
@@ -686,7 +790,7 @@ class TestCliHierarchicalView:
         progress.update.assert_called()
 
     def test_on_step_skipped_shows_skipped_indicator(self):
-        """on_step_skipped should show skipped indicator."""
+        """on_step_skipped should update Live display."""
         from rich.console import Console
         from rich.progress import Progress
 
@@ -697,6 +801,148 @@ class TestCliHierarchicalView:
         from wx4.context import PipelineContext
 
         ctx = PipelineContext(src=Path("/test/audio.mp3"))
+        cb.on_pipeline_start(["normalize", "enhance"], ctx)
         cb.on_step_skipped("normalize", ctx)
 
-        console.print.assert_called()
+        assert cb._live is not None
+        cb._live.stop()
+
+
+class TestIsIntermediateFile:
+    """Tests for _is_intermediate_file function."""
+
+    def test_returns_true_for_enhanced_m4a(self, tmp_path):
+        from wx4.cli import _is_intermediate_file
+
+        f = tmp_path / "audio_enhanced.m4a"
+        assert _is_intermediate_file(f) is True
+
+    def test_returns_true_for_normalized_m4a(self, tmp_path):
+        from wx4.cli import _is_intermediate_file
+
+        f = tmp_path / "audio_normalized.m4a"
+        assert _is_intermediate_file(f) is True
+
+    def test_returns_true_for_timestamps_json(self, tmp_path):
+        from wx4.cli import _is_intermediate_file
+
+        f = tmp_path / "audio_timestamps.json"
+        assert _is_intermediate_file(f) is True
+
+    def test_returns_true_for_timestamps_srt(self, tmp_path):
+        from wx4.cli import _is_intermediate_file
+
+        f = tmp_path / "audio_timestamps.srt"
+        assert _is_intermediate_file(f) is True
+
+    def test_returns_true_for_timestamps_mp4(self, tmp_path):
+        from wx4.cli import _is_intermediate_file
+
+        f = tmp_path / "audio_timestamps.mp4"
+        assert _is_intermediate_file(f) is True
+
+    def test_returns_true_for_transcript_txt(self, tmp_path):
+        from wx4.cli import _is_intermediate_file
+
+        f = tmp_path / "audio_transcript.txt"
+        assert _is_intermediate_file(f) is True
+
+    def test_returns_true_for_compressed_mp4(self, tmp_path):
+        from wx4.cli import _is_intermediate_file
+
+        f = tmp_path / "video_compressed.mp4"
+        assert _is_intermediate_file(f) is True
+
+    def test_returns_false_for_original_video(self, tmp_path):
+        from wx4.cli import _is_intermediate_file
+
+        f = tmp_path / "meeting.mp4"
+        assert _is_intermediate_file(f) is False
+
+    def test_returns_false_for_original_audio(self, tmp_path):
+        from wx4.cli import _is_intermediate_file
+
+        f = tmp_path / "audio.m4a"
+        assert _is_intermediate_file(f) is False
+
+
+class TestHasVideoStream:
+    """Tests for _has_video_stream function using ffprobe."""
+
+    def test_returns_true_when_video_stream_exists(self, tmp_path):
+        from wx4.cli import _has_video_stream
+        from unittest.mock import patch
+
+        f = tmp_path / "video.mp4"
+        f.write_bytes(b"fake")
+
+        mock_probe = {"streams": [{"codec_type": "video"}, {"codec_type": "audio"}]}
+        with patch("wx4.cli.ffmpeg.probe", return_value=mock_probe):
+            result = _has_video_stream(f)
+            assert result is True
+
+    def test_returns_false_when_only_audio_stream(self, tmp_path):
+        from wx4.cli import _has_video_stream
+        from unittest.mock import patch
+
+        f = tmp_path / "audio.m4a"
+        f.write_bytes(b"fake")
+
+        mock_probe = {"streams": [{"codec_type": "audio"}]}
+        with patch("wx4.cli.ffmpeg.probe", return_value=mock_probe):
+            result = _has_video_stream(f)
+            assert result is False
+
+    def test_returns_none_on_ffprobe_error(self, tmp_path):
+        from wx4.cli import _has_video_stream
+        from unittest.mock import patch
+
+        f = tmp_path / "file.mp4"
+        f.write_bytes(b"fake")
+
+        with patch("wx4.cli.ffmpeg.probe", side_effect=Exception("ffprobe failed")):
+            result = _has_video_stream(f)
+            assert result is None
+
+
+class TestExpandPaths:
+    """Tests for _expand_paths function."""
+
+    def test_single_file_returns_that_file(self, tmp_path):
+        from wx4.cli import _expand_paths
+
+        f = tmp_path / "video.mp4"
+        f.write_bytes(b"fake")
+
+        result = _expand_paths([str(f)])
+        assert len(result) == 1
+        assert result[0] == f
+
+    def test_directory_expands_to_audio_video_files_only(self, tmp_path):
+        from wx4.cli import _expand_paths
+
+        # Create files
+        (tmp_path / "video.mp4").write_bytes(b"fake")
+        (tmp_path / "audio.m4a").write_bytes(b"fake")
+        (tmp_path / "video_enhanced.m4a").write_bytes(b"fake")
+        (tmp_path / "video_timestamps.srt").write_bytes(b"fake")
+
+        result = _expand_paths([str(tmp_path)])
+        names = [p.name for p in result]
+        assert "video.mp4" in names
+        assert "audio.m4a" in names
+        assert "video_enhanced.m4a" not in names
+        assert "video_timestamps.srt" not in names
+
+    def test_mixed_files_and_directories(self, tmp_path):
+        from wx4.cli import _expand_paths
+
+        subdir = tmp_path / "subdir"
+        subdir.mkdir()
+        (subdir / "meeting.mp4").write_bytes(b"fake")
+        (tmp_path / "audio.m4a").write_bytes(b"fake")
+
+        result = _expand_paths([str(tmp_path)])
+        names = [p.name for p in result]
+        assert "meeting.mp4" in names
+        assert "audio.m4a" in names

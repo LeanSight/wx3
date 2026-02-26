@@ -20,6 +20,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Table
+from rich.console import Group
 from rich.text import Text
 
 from wx4.context import PipelineConfig, PipelineContext
@@ -138,7 +139,10 @@ class RichProgressCallback:
                 icon = f"[dim]{self._PENDING}[/dim]"
                 name_with_percent = name
             lines.append(f"  {icon} {name_with_percent}")
-        return Text.from_markup("\n".join(lines))
+        tree = Text.from_markup("\n".join(lines))
+        if self._progress_task is not None:
+            return Group(tree, self._progress)
+        return tree
 
     def on_pipeline_start(self, step_names: List[str], ctx: PipelineContext) -> None:
         self._current_file = ctx.src
