@@ -44,6 +44,16 @@ class PipelineContext:
     # fine-grained progress without depending on Rich directly.
     step_progress: Optional[Callable[[int, int], None]] = None
 
+    # --- Transcription backend selection ---
+    # "assemblyai" (default, requires ASSEMBLY_AI_KEY) or "whisper" (local, requires hf_token)
+    transcribe_backend: str = "assemblyai"
+    # HuggingFace token for Pyannote diarization (only used when transcribe_backend="whisper")
+    hf_token: Optional[str] = None
+    # Whisper model identifier passed to transformers pipeline
+    whisper_model: str = "openai/whisper-large-v3"
+    # Compute device: "auto", "cpu", "cuda", or "mps"
+    device: str = "auto"
+
     cache_hit: bool = False
     timings: Dict[str, float] = field(default_factory=dict)
     cache: Dict[str, Any] = field(default_factory=dict)

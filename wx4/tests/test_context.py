@@ -95,3 +95,53 @@ class TestStep:
         step: Step = lambda c: c
         result = step(ctx)
         assert result is ctx
+
+
+class TestPipelineContextWhisperFields:
+    def test_transcribe_backend_defaults_to_assemblyai(self, tmp_path):
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=tmp_path / "test.wav")
+        assert ctx.transcribe_backend == "assemblyai"
+
+    def test_hf_token_defaults_to_none(self, tmp_path):
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=tmp_path / "test.wav")
+        assert ctx.hf_token is None
+
+    def test_whisper_model_defaults_to_large_v3(self, tmp_path):
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=tmp_path / "test.wav")
+        assert ctx.whisper_model == "openai/whisper-large-v3"
+
+    def test_device_defaults_to_auto(self, tmp_path):
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=tmp_path / "test.wav")
+        assert ctx.device == "auto"
+
+    def test_can_set_whisper_backend(self, tmp_path):
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=tmp_path / "test.wav", transcribe_backend="whisper")
+        assert ctx.transcribe_backend == "whisper"
+
+    def test_can_set_hf_token(self, tmp_path):
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=tmp_path / "test.wav", hf_token="hf_abc123")
+        assert ctx.hf_token == "hf_abc123"
+
+    def test_can_set_whisper_model(self, tmp_path):
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=tmp_path / "test.wav", whisper_model="openai/whisper-small")
+        assert ctx.whisper_model == "openai/whisper-small"
+
+    def test_can_set_device(self, tmp_path):
+        from wx4.context import PipelineContext
+
+        ctx = PipelineContext(src=tmp_path / "test.wav", device="cpu")
+        assert ctx.device == "cpu"
