@@ -2,6 +2,7 @@
 Typer + Rich CLI for wx4 pipeline.
 """
 
+import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -25,6 +26,24 @@ _CV_MODEL = "MossFormer2_SE_48K"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
+
+
+def _get_secret(
+    arg_value: Optional[str], env_var: str, required: bool = False
+) -> Optional[str]:
+    """
+    Read secret with priority: argument > env var > error/None.
+    """
+    if arg_value:
+        return arg_value
+    value = os.environ.get(env_var)
+    if value:
+        return value
+    if required:
+        raise typer.BadParameter(
+            f"Neither provided via argument nor set in {env_var} environment variable"
+        )
+    return None
 
 
 class RichProgressCallback:
@@ -125,9 +144,8 @@ def main(
         typer.echo(ctx.get_help())
         raise typer.Exit()
 
+    api_key = _get_secret(api_key, "ASSEMBLY_AI_KEY", required=True)
     if api_key:
-        import os
-
         os.environ["ASSEMBLY_AI_KEY"] = api_key
 
     speaker_names = parse_speakers_map(speakers_map)
@@ -138,6 +156,8 @@ def main(
         compress_ratio=compress,
     )
     steps = build_steps(config)
+
+    hf_token = _get_secret(hf_token, "HF_TOKEN")
 
     cv = None
     if not skip_enhance:
