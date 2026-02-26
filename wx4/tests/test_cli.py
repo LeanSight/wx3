@@ -508,6 +508,7 @@ class TestRichProgressCallbackPercentageDisplay:
 
         # _render_tree returns Text when no active task (progress_task is None)
         from rich.text import Text
+
         assert isinstance(tree, Text)
         assert "45%" in tree.plain
 
@@ -527,6 +528,7 @@ class TestRichProgressCallbackPercentageDisplay:
         tree = cb._render_tree()
 
         from rich.text import Text
+
         assert isinstance(tree, Text)
         assert "%" not in tree.plain
         cb._live.stop()
@@ -752,7 +754,7 @@ class TestCliHierarchicalView:
 
         assert cb._current_file == src
 
-    def test_on_step_start_shows_step_name(self):
+    def test_on_step_start_adds_progress_task(self):
         """on_step_start should show the step name in progress."""
         from rich.console import Console
         from rich.progress import Progress

@@ -562,3 +562,87 @@ class TestAcceptanceWhisperBackend:
 
         m_cv.assert_not_called()
         assert result.srt is not None
+
+
+class TestUIBehavior:
+    """ATDD tests for UI behavior - filename in header, progress bars, etc."""
+
+    def test_live_display_includes_filename(self, tmp_path):
+        """Filename should appear in the Live display header."""
+        from pathlib import Path
+        from unittest.mock import MagicMock
+        from wx4.cli import RichProgressCallback
+        from wx4.context import PipelineContext
+
+        console = MagicMock()
+        progress = MagicMock()
+        cb = RichProgressCallback(console, progress)
+
+        src = Path("/test/audio.mp3")
+        ctx = PipelineContext(src=src)
+
+        cb.on_pipeline_start(["cache_check", "enhance"], ctx)
+        tree = cb._render_tree()
+
+        assert "audio.mp3" in tree.plain
+
+
+def test_progress_widget_has_bar_column():
+    """Progress widget should include BarColumn for visual progress."""
+    from rich.progress import BarColumn, TimeElapsedColumn
+    from unittest.mock import MagicMock
+
+    from wx4.cli import _make_progress
+
+    console = MagicMock()
+    progress = _make_progress(console)
+
+    assert any(isinstance(c, BarColumn) for c in progress.columns)
+    assert any(isinstance(c, TimeElapsedColumn) for c in progress.columns)
+
+
+def test_progress_task_has_empty_description():
+    """Progress task should have empty description to avoid duplication with tree."""
+    from unittest.mock import MagicMock
+
+    from wx4.cli import RichProgressCallback
+    from wx4.context import PipelineContext
+
+    console = MagicMock()
+    progress = MagicMock()
+    cb = RichProgressCallback(console, progress)
+
+    ctx = PipelineContext(src=MagicMock())
+    cb.on_pipeline_start(["compress"], ctx)
+    cb.on_step_start("compress", ctx)
+
+    call_args = progress.add_task.call_args
+    assert call_args.kwargs.get("description") == "" or call_args.args[0] == ""
+
+
+def test_running_step_renders_colored_icon():
+    """Regression test: colored icons must render as ANSI, not as literal [cyan] tags."""
+    from io import StringIO
+    from pathlib import Path
+    from rich.console import Console
+
+    from wx4.cli import RichProgressCallback
+    from wx4.context import PipelineContext
+
+    buf = StringIO()
+    console = Console(file=buf, force_terminal=True, width=80)
+    progress = MagicMock()
+    progress.add_task = MagicMock(return_value=1)
+    cb = RichProgressCallback(console, progress)
+
+    ctx = PipelineContext(src=Path("/test/audio.mp3"))
+    cb.on_pipeline_start(["enhance"], ctx)
+    cb._step_states["enhance"] = "running"
+    cb._progress_task = None
+
+    tree = cb._render_tree()
+    console.print(tree)
+
+    output = buf.getvalue()
+    assert "[cyan]" not in output
+    assert ">" in output

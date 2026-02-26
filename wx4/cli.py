@@ -4,7 +4,7 @@ Typer + Rich CLI for wx4 pipeline.
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import typer
 from rich import box
@@ -31,6 +31,17 @@ _CV_MODEL = "MossFormer2_SE_48K"
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console(markup=True, force_terminal=True)
+
+
+def _make_progress(console: Console) -> Progress:
+    """Create Progress widget with all required columns."""
+    return Progress(
+        SpinnerColumn(),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        TimeElapsedColumn(),
+        console=console,
+    )
 
 
 def _get_secret(
@@ -120,9 +131,11 @@ class RichProgressCallback:
         self._progress_completed: Dict[str, int] = {}
         self._live = None
 
-    def _render_tree(self) -> Text:
+    def _render_tree(self) -> Any:
         """Render hierarchical view as indented tree."""
         lines = []
+        if self._current_file:
+            lines.append(f"[bold]{self._current_file.name}[/bold]")
         for name in self._step_names:
             state = self._step_states.get(name, "pending")
             if state == "running":
@@ -161,7 +174,7 @@ class RichProgressCallback:
     def on_step_start(self, name: str, ctx: PipelineContext) -> None:
         self._current_step = name
         self._step_states[name] = "running"
-        self._progress_task = self._progress.add_task(f"  {name}", total=100)
+        self._progress_task = self._progress.add_task("", total=100)
         if self._live:
             self._live.update(self._render_tree())
 
@@ -286,12 +299,8 @@ def main(
         cv = ClearVoice(task="speech_enhancement", model_names=[_CV_MODEL])
 
     results = []
-    # Progress para step progress (no usa Live internamente)
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn("{task.description}"),
-        console=console,
-    )
+    # Progress para step progress
+    progress = _make_progress(console)
     cb = RichProgressCallback(console, progress)
     pipeline = Pipeline(steps, callbacks=[cb])
 
