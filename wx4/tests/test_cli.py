@@ -5,7 +5,7 @@ Uses typer.testing.CliRunner.
 
 import dataclasses
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -53,6 +53,7 @@ class TestCli:
         from typer.testing import CliRunner
 
         from wx4.cli import app
+        from wx4.context import PipelineConfig
 
         f = tmp_path / "audio.mp3"
         f.write_bytes(b"audio")
@@ -66,13 +67,15 @@ class TestCli:
             runner = CliRunner()
             runner.invoke(app, [str(f), "--skip-enhance"])
 
-        call_kwargs = mock_build.call_args.kwargs
-        assert call_kwargs.get("skip_enhance") is True
+        config = mock_build.call_args.args[0]
+        assert isinstance(config, PipelineConfig)
+        assert config.skip_enhance is True
 
     def test_videooutput_flag_forwarded(self, tmp_path):
         from typer.testing import CliRunner
 
         from wx4.cli import app
+        from wx4.context import PipelineConfig
 
         f = tmp_path / "audio.mp3"
         f.write_bytes(b"audio")
@@ -86,10 +89,11 @@ class TestCli:
             runner = CliRunner()
             runner.invoke(app, [str(f), "--videooutput"])
 
-        call_kwargs = mock_build.call_args.kwargs
-        assert call_kwargs.get("videooutput") is True
+        config = mock_build.call_args.args[0]
+        assert isinstance(config, PipelineConfig)
+        assert config.videooutput is True
 
-    def test_force_flag_forwarded(self, tmp_path):
+    def test_force_flag_forwarded_to_context(self, tmp_path):
         from typer.testing import CliRunner
 
         from wx4.cli import app
@@ -97,17 +101,20 @@ class TestCli:
         f = tmp_path / "audio.mp3"
         f.write_bytes(b"audio")
         mock_ctx = _make_ctx(tmp_path)
+        captured = {}
+
+        def fake_run(ctx):
+            captured["force"] = ctx.force
+            return mock_ctx
 
         with patch("wx4.cli.Pipeline") as MockPipeline, patch(
-            "wx4.cli.build_steps"
-        ) as mock_build:
-            MockPipeline.return_value.run.return_value = mock_ctx
-            mock_build.return_value = []
+            "wx4.cli.build_steps", return_value=[]
+        ):
+            MockPipeline.return_value.run.side_effect = fake_run
             runner = CliRunner()
             runner.invoke(app, [str(f), "--force"])
 
-        call_kwargs = mock_build.call_args.kwargs
-        assert call_kwargs.get("force") is True
+        assert captured.get("force") is True
 
     def test_speaker_names_parsed_and_forwarded(self, tmp_path):
         import sys
@@ -216,6 +223,112 @@ class TestCli:
         MockCV.assert_called_once()
         assert captured.get("cv") is mock_cv_instance
 
+    def test_compress_flag_forwarded_to_build_steps(self, tmp_path):
+        from typer.testing import CliRunner
+
+        from wx4.cli import app
+        from wx4.context import PipelineConfig
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+
+        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
+            "wx4.cli.build_steps"
+        ) as mock_build:
+            MockPipeline.return_value.run.return_value = mock_ctx
+            mock_build.return_value = []
+            runner = CliRunner()
+            runner.invoke(app, [str(f), "--compress"])
+
+        config = mock_build.call_args.args[0]
+        assert isinstance(config, PipelineConfig)
+        assert config.compress is True
+
+    def test_compress_ratio_forwarded_to_context(self, tmp_path):
+        from typer.testing import CliRunner
+
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+        captured = {}
+
+        def fake_run(ctx):
+            captured["compress_ratio"] = ctx.compress_ratio
+            return mock_ctx
+
+        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
+            "wx4.cli.build_steps", return_value=[]
+        ):
+            MockPipeline.return_value.run.side_effect = fake_run
+            runner = CliRunner()
+            runner.invoke(app, [str(f), "--compress", "--compress-ratio", "0.30"])
+
+        import pytest
+        assert captured.get("compress_ratio") == pytest.approx(0.30)
+
+    def test_compress_encoder_forwarded_to_context(self, tmp_path):
+        from typer.testing import CliRunner
+
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+        captured = {}
+
+        def fake_run(ctx):
+            captured["compress_encoder"] = ctx.compress_encoder
+            return mock_ctx
+
+        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
+            "wx4.cli.build_steps", return_value=[]
+        ):
+            MockPipeline.return_value.run.side_effect = fake_run
+            runner = CliRunner()
+            runner.invoke(app, [str(f), "--compress", "--compress-encoder", "cpu"])
+
+        assert captured.get("compress_encoder") == "cpu"
+
+    def test_summary_table_shows_compressed_filename(self, tmp_path):
+        from typer.testing import CliRunner
+
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        compressed_path = tmp_path / "audio_compressed.mp4"
+        mock_ctx = _make_ctx(tmp_path, video_compressed=compressed_path)
+
+        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
+            "wx4.cli.build_steps", return_value=[]
+        ):
+            MockPipeline.return_value.run.return_value = mock_ctx
+            runner = CliRunner()
+            result = runner.invoke(app, [str(f)])
+
+        assert "audio_compressed.mp4" in result.output
+
+    def test_summary_table_shows_dash_when_no_compressed(self, tmp_path):
+        from typer.testing import CliRunner
+
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path, video_compressed=None)
+
+        with patch("wx4.cli.Pipeline") as MockPipeline, patch(
+            "wx4.cli.build_steps", return_value=[]
+        ):
+            MockPipeline.return_value.run.return_value = mock_ctx
+            runner = CliRunner()
+            result = runner.invoke(app, [str(f)])
+
+        assert result.exit_code == 0
+
     def test_cv_is_none_when_skip_enhance(self, tmp_path):
         """When skip_enhance=True, ClearVoice must NOT be instantiated."""
         import sys
@@ -294,3 +407,47 @@ class TestCliProgress:
         call_kwargs = MockPipeline.call_args.kwargs
         callbacks = call_kwargs.get("callbacks", [])
         assert len(callbacks) >= 1
+
+
+# ---------------------------------------------------------------------------
+# TestRichProgressCallbackOnStepProgress
+# ---------------------------------------------------------------------------
+
+
+class TestRichProgressCallbackOnStepProgress:
+    def _make_cb(self):
+        from rich.progress import Progress
+        from wx4.cli import RichProgressCallback
+
+        progress = MagicMock(spec=Progress)
+        progress.add_task = MagicMock(return_value=42)
+        cb = RichProgressCallback(progress)
+        return cb, progress
+
+    def test_on_step_progress_updates_step_task(self):
+        cb, progress = self._make_cb()
+        # Simulate a step has started and added a task
+        cb._step_task = 42
+        cb.on_step_progress("enhance", 5, 100)
+        progress.update.assert_called_once_with(42, total=100, completed=5)
+
+    def test_on_step_progress_no_op_when_no_step_task(self):
+        cb, progress = self._make_cb()
+        cb._step_task = None
+        # Should not raise
+        cb.on_step_progress("enhance", 5, 100)
+        progress.update.assert_not_called()
+
+    def test_on_step_progress_updates_deterministic_progress(self):
+        """First call sets total; subsequent calls advance completed."""
+        cb, progress = self._make_cb()
+        cb._step_task = 7
+        cb.on_step_progress("enhance", 1, 50)
+        cb.on_step_progress("enhance", 25, 50)
+        calls = progress.update.call_args_list
+        assert calls[0] == call(7, total=50, completed=1)
+        assert calls[1] == call(7, total=50, completed=25)
+
+    def test_on_step_progress_is_defined_on_callback(self):
+        from wx4.cli import RichProgressCallback
+        assert hasattr(RichProgressCallback, "on_step_progress")

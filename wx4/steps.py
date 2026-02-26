@@ -14,6 +14,14 @@ from wx4.audio_enhance import apply_clearvoice
 from wx4.audio_extract import extract_to_wav
 from wx4.audio_normalize import normalize_lufs
 from wx4.cache_io import file_key, load_cache, save_cache
+from wx4.compress_video import (
+    LufsInfo,
+    calculate_video_bitrate,
+    compress_video as _compress_video,
+    detect_best_encoder,
+    measure_audio_lufs,
+    probe_video,
+)
 from wx4.context import PipelineContext
 from wx4.format_srt import words_to_srt
 from wx4.transcribe_aai import transcribe_assemblyai
@@ -92,7 +100,7 @@ def enhance_step(ctx: PipelineContext) -> PipelineContext:
             raise RuntimeError(f"extract_to_wav failed for {ctx.src.name}")
 
         normalize_lufs(tmp_raw, tmp_norm)
-        apply_clearvoice(tmp_norm, tmp_enh, ctx.cv)
+        apply_clearvoice(tmp_norm, tmp_enh, ctx.cv, progress_callback=ctx.step_progress)
 
         if ctx.output_m4a:
             tmp_out = out.with_suffix(".m4a.tmp")
@@ -207,4 +215,40 @@ def video_step(ctx: PipelineContext) -> PipelineContext:
 
     return dataclasses.replace(
         ctx, video_out=out, timings={**ctx.timings, "video": time.time() - t0}
+    )
+
+
+# ---------------------------------------------------------------------------
+# compress_step
+# ---------------------------------------------------------------------------
+
+
+def compress_step(ctx: PipelineContext) -> PipelineContext:
+    """
+    Compress the original source video using compress_video routines.
+    Raises RuntimeError if src is not a video file or probe fails.
+    """
+    t0 = time.time()
+    src = ctx.src
+    out = src.parent / f"{src.stem}_compressed.mp4"
+
+    try:
+        info = probe_video(src)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"compress_step: {src.name} is not a video file or probe failed: {exc}"
+        ) from exc
+
+    if info.has_audio:
+        measured = measure_audio_lufs(src)
+        lufs = LufsInfo.from_measured(measured)
+    else:
+        lufs = LufsInfo.noop()
+
+    encoder = detect_best_encoder(force=ctx.compress_encoder)
+    bitrate = calculate_video_bitrate(info, ctx.compress_ratio)
+    _compress_video(info, lufs, encoder, bitrate, out)
+
+    return dataclasses.replace(
+        ctx, video_compressed=out, timings={**ctx.timings, "compress": time.time() - t0}
     )

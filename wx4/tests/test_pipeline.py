@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from wx4.context import PipelineContext
+from wx4.context import PipelineConfig, PipelineContext
 
 
 def _ctx(tmp_path) -> PipelineContext:
@@ -75,7 +75,9 @@ class TestPipeline:
         new_ctx = dataclasses.replace(ctx, srt_mode="sentences")
         step = MagicMock(return_value=new_ctx)
         result = Pipeline([step]).run(ctx)
-        step.assert_called_once_with(ctx)
+        step.assert_called_once()
+        # step receives ctx with step_progress injected; src must be unchanged
+        assert step.call_args.args[0].src == ctx.src
         assert result.srt_mode == "sentences"
 
     def test_steps_applied_in_order(self, tmp_path):
@@ -287,7 +289,7 @@ class TestBuildSteps:
         from wx4.pipeline import build_steps
         from wx4.steps import cache_check_step, cache_save_step, enhance_step
 
-        fns = self._fns(build_steps(skip_enhance=True))
+        fns = self._fns(build_steps(PipelineConfig(skip_enhance=True)))
         assert cache_check_step not in fns
         assert enhance_step not in fns
         assert cache_save_step not in fns
@@ -296,7 +298,7 @@ class TestBuildSteps:
         from wx4.pipeline import NamedStep, build_steps
         from wx4.steps import video_step
 
-        steps = build_steps(videooutput=True)
+        steps = build_steps(PipelineConfig(videooutput=True))
         fns = self._fns(steps)
         assert video_step in fns
         last = steps[-1]
@@ -306,7 +308,7 @@ class TestBuildSteps:
         from wx4.pipeline import build_steps
         from wx4.steps import video_step
 
-        fns = self._fns(build_steps(videooutput=False))
+        fns = self._fns(build_steps(PipelineConfig(videooutput=False)))
         assert video_step not in fns
 
     def test_all_flags_combined(self):
@@ -320,7 +322,7 @@ class TestBuildSteps:
             video_step,
         )
 
-        fns = self._fns(build_steps(skip_enhance=True, videooutput=True))
+        fns = self._fns(build_steps(PipelineConfig(skip_enhance=True, videooutput=True)))
         assert cache_check_step not in fns
         assert enhance_step not in fns
         assert transcribe_step in fns
@@ -348,3 +350,133 @@ class TestBuildSteps:
         steps = build_steps()
         tr = next(s for s in steps if isinstance(s, NamedStep) and s.fn is transcribe_step)
         assert tr.output_fn is not None
+
+    def test_compress_flag_appends_compress_step(self):
+        from wx4.pipeline import build_steps
+        from wx4.steps import compress_step
+
+        fns = self._fns(build_steps(PipelineConfig(compress=True)))
+        assert compress_step in fns
+
+    def test_no_compress_step_when_compress_false(self):
+        from wx4.pipeline import build_steps
+        from wx4.steps import compress_step
+
+        fns = self._fns(build_steps(PipelineConfig(compress=False)))
+        assert compress_step not in fns
+
+    def test_compress_step_is_last_when_no_videooutput(self):
+        from wx4.pipeline import NamedStep, build_steps
+        from wx4.steps import compress_step
+
+        steps = build_steps(PipelineConfig(compress=True, videooutput=False))
+        last = steps[-1]
+        fn = last.fn if isinstance(last, NamedStep) else last
+        assert fn is compress_step
+
+    def test_compress_step_is_last_even_with_videooutput(self):
+        """compress always goes after video, compressing the ORIGINAL src."""
+        from wx4.pipeline import NamedStep, build_steps
+        from wx4.steps import compress_step
+
+        steps = build_steps(PipelineConfig(compress=True, videooutput=True))
+        last = steps[-1]
+        fn = last.fn if isinstance(last, NamedStep) else last
+        assert fn is compress_step
+
+    def test_compress_step_has_output_fn(self):
+        from wx4.pipeline import NamedStep, build_steps
+        from wx4.steps import compress_step
+
+        steps = build_steps(PipelineConfig(compress=True))
+        step = next(s for s in steps if isinstance(s, NamedStep) and s.fn is compress_step)
+        assert step.output_fn is not None
+
+
+# ---------------------------------------------------------------------------
+# TestStepProgressInjection
+# ---------------------------------------------------------------------------
+
+
+class TestStepProgressInjection:
+    """Pipeline injects step_progress into ctx before each step runs."""
+
+    def test_step_receives_step_progress_callable(self, tmp_path):
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        received = {}
+
+        def capture_step(c):
+            received["progress"] = c.step_progress
+            return c
+
+        Pipeline([NamedStep("test", capture_step)]).run(ctx)
+        assert callable(received["progress"])
+
+    def test_step_progress_calls_on_step_progress_on_callback(self, tmp_path):
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        calls = []
+
+        class ProgressCapture:
+            def on_pipeline_start(self, names): pass
+            def on_step_start(self, name, ctx): pass
+            def on_step_end(self, name, ctx): pass
+            def on_step_skipped(self, name, ctx): pass
+            def on_pipeline_end(self, ctx): pass
+            def on_step_progress(self, name, done, total):
+                calls.append((name, done, total))
+
+        fired_progress = {}
+
+        def step_that_fires_progress(c):
+            c.step_progress(3, 10)
+            return c
+
+        cb = ProgressCapture()
+        Pipeline([NamedStep("enhance", step_that_fires_progress)], callbacks=[cb]).run(ctx)
+        assert calls == [("enhance", 3, 10)]
+
+    def test_step_progress_ignored_when_callback_lacks_method(self, tmp_path):
+        """Callbacks without on_step_progress don't raise."""
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+
+        def step_fires_progress(c):
+            c.step_progress(1, 5)
+            return c
+
+        cb = _make_cb()  # MagicMock without on_step_progress attribute
+        del cb.on_step_progress  # ensure attribute is absent
+        Pipeline([NamedStep("s", step_fires_progress)], callbacks=[cb]).run(ctx)
+        # no exception = pass
+
+    def test_step_progress_injected_per_step_with_correct_name(self, tmp_path):
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        progress_names = []
+
+        class NameCapture:
+            def on_pipeline_start(self, names): pass
+            def on_step_start(self, name, ctx): pass
+            def on_step_end(self, name, ctx): pass
+            def on_step_skipped(self, name, ctx): pass
+            def on_pipeline_end(self, ctx): pass
+            def on_step_progress(self, name, done, total):
+                progress_names.append(name)
+
+        def step_a(c):
+            c.step_progress(1, 1)
+            return c
+
+        def step_b(c):
+            c.step_progress(1, 1)
+            return c
+
+        cb = NameCapture()
+        Pipeline([NamedStep("alpha", step_a), NamedStep("beta", step_b)], callbacks=[cb]).run(ctx)
+        assert progress_names == ["alpha", "beta"]

@@ -6,6 +6,32 @@ import dataclasses
 from pathlib import Path
 
 
+class TestPipelineConfig:
+    def test_minimal_construction_no_args(self):
+        from wx4.context import PipelineConfig
+
+        cfg = PipelineConfig()
+        assert cfg.skip_enhance is False
+        assert cfg.videooutput is False
+        assert cfg.compress is False
+
+    def test_is_frozen(self):
+        import pytest
+        from wx4.context import PipelineConfig
+
+        cfg = PipelineConfig()
+        with pytest.raises((AttributeError, dataclasses.FrozenInstanceError)):
+            cfg.skip_enhance = True
+
+    def test_can_construct_with_flags(self):
+        from wx4.context import PipelineConfig
+
+        cfg = PipelineConfig(skip_enhance=True, videooutput=True, compress=True)
+        assert cfg.skip_enhance is True
+        assert cfg.videooutput is True
+        assert cfg.compress is True
+
+
 class TestPipelineContext:
     def test_minimal_construction_with_src(self, tmp_path):
         from wx4.context import PipelineContext
@@ -20,12 +46,10 @@ class TestPipelineContext:
         ctx = PipelineContext(src=tmp_path / "test.wav")
         assert ctx.srt_mode == "speaker-only"
         assert ctx.output_m4a is True
-        assert ctx.skip_enhance is False
         assert ctx.force is False
         assert ctx.language is None
         assert ctx.speakers is None
         assert ctx.speaker_names == {}
-        assert ctx.videooutput is False
         assert ctx.enhanced is None
         assert ctx.transcript_txt is None
         assert ctx.transcript_json is None
@@ -33,6 +57,9 @@ class TestPipelineContext:
         assert ctx.video_out is None
         assert ctx.cache_hit is False
         assert ctx.cv is None
+        assert ctx.compress_ratio == 0.40
+        assert ctx.compress_encoder is None
+        assert ctx.video_compressed is None
 
     def test_replace_creates_new_instance(self, tmp_path):
         from wx4.context import PipelineContext

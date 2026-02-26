@@ -49,7 +49,7 @@ class TestAcceptance:
             patch("wx4.steps.to_aac", side_effect=lambda s, d, **kw: (d.write_bytes(b"aac") or True)),
             patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
         ):
-            from wx4.context import PipelineContext
+            from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
             ctx = PipelineContext(
@@ -58,7 +58,7 @@ class TestAcceptance:
                 enhanced=enhanced_path,
                 cache_hit=False,
             )
-            steps = build_steps(skip_enhance=True)
+            steps = build_steps(PipelineConfig(skip_enhance=True))
             pipeline = Pipeline(steps)
             result = pipeline.run(ctx)
 
@@ -74,11 +74,11 @@ class TestAcceptance:
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
         with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock) as mock_transcribe:
-            from wx4.context import PipelineContext
+            from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
-            ctx = PipelineContext(src=src, skip_enhance=True)
-            steps = build_steps(skip_enhance=True)
+            ctx = PipelineContext(src=src)
+            steps = build_steps(PipelineConfig(skip_enhance=True))
             pipeline = Pipeline(steps)
             result = pipeline.run(ctx)
 
@@ -104,11 +104,11 @@ class TestAcceptance:
             patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
             patch("wx4.steps.load_cache", return_value=cache_data),
         ):
-            from wx4.context import PipelineContext
+            from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
             ctx = PipelineContext(src=src)
-            steps = build_steps(skip_enhance=False)
+            steps = build_steps(PipelineConfig(skip_enhance=False))
             pipeline = Pipeline(steps)
             result = pipeline.run(ctx)
 
@@ -127,16 +127,15 @@ class TestAcceptance:
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
         with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock):
-            from wx4.context import PipelineContext
+            from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
             ctx = PipelineContext(
                 src=src,
-                skip_enhance=True,
                 speaker_names={"A": "Marcel"},
                 srt_mode="sentences",
             )
-            steps = build_steps(skip_enhance=True)
+            steps = build_steps(PipelineConfig(skip_enhance=True))
             pipeline = Pipeline(steps)
             result = pipeline.run(ctx)
 
@@ -157,16 +156,68 @@ class TestAcceptance:
             patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
             patch("wx4.steps.audio_to_black_video", return_value=True),
         ):
-            from wx4.context import PipelineContext
+            from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
-            ctx = PipelineContext(src=src, skip_enhance=True, videooutput=True)
-            steps = build_steps(skip_enhance=True, videooutput=True)
+            ctx = PipelineContext(src=src)
+            steps = build_steps(PipelineConfig(skip_enhance=True, videooutput=True))
             pipeline = Pipeline(steps)
             result = pipeline.run(ctx)
 
         assert result.video_out is not None
         assert result.video_out.suffix == ".mp4"
+
+    def test_compress_produces_video_compressed(self, tmp_path):
+        """compress=True -> result.video_compressed is Path named <stem>_compressed.mp4."""
+        src = tmp_path / "meeting.mp4"
+        src.write_bytes(b"fake video")
+
+        words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
+        transcribe_mock = _make_transcribe_mock(tmp_path, "meeting", words)
+
+        mock_info = MagicMock()
+        mock_info.has_audio = True
+        mock_lufs_cls = MagicMock()
+        mock_lufs_cls.from_measured.return_value = MagicMock()
+
+        with (
+            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
+            patch("wx4.steps.probe_video", return_value=mock_info),
+            patch("wx4.steps.measure_audio_lufs", return_value=-20.0),
+            patch("wx4.steps.LufsInfo", mock_lufs_cls),
+            patch("wx4.steps.detect_best_encoder", return_value=MagicMock()),
+            patch("wx4.steps.calculate_video_bitrate", return_value=500_000),
+            patch("wx4.steps._compress_video"),
+        ):
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(src=src)
+            steps = build_steps(PipelineConfig(skip_enhance=True, compress=True))
+            pipeline = Pipeline(steps)
+            result = pipeline.run(ctx)
+
+        assert result.video_compressed is not None
+        assert result.video_compressed.name == "meeting_compressed.mp4"
+
+    def test_pipeline_without_compress_leaves_video_compressed_none(self, tmp_path):
+        """compress=False (default) -> result.video_compressed is None."""
+        src = tmp_path / "audio.mp3"
+        src.write_bytes(b"audio")
+
+        words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
+        transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
+
+        with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock):
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(src=src)
+            steps = build_steps(PipelineConfig(skip_enhance=True, compress=False))
+            pipeline = Pipeline(steps)
+            result = pipeline.run(ctx)
+
+        assert result.video_compressed is None
 
     def test_pipeline_without_video_step(self, tmp_path):
         """videooutput=False (default) -> ctx.video_out is None."""
@@ -177,11 +228,11 @@ class TestAcceptance:
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
         with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock):
-            from wx4.context import PipelineContext
+            from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
-            ctx = PipelineContext(src=src, skip_enhance=True, videooutput=False)
-            steps = build_steps(skip_enhance=True, videooutput=False)
+            ctx = PipelineContext(src=src)
+            steps = build_steps(PipelineConfig(skip_enhance=True, videooutput=False))
             pipeline = Pipeline(steps)
             result = pipeline.run(ctx)
 

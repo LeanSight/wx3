@@ -15,7 +15,16 @@ class TestApplyClearvoice:
         src = tmp_path / "in.wav"
         dst = tmp_path / "out.wav"
         apply_clearvoice(src, dst, cv)
-        cv.assert_called_once_with(input_path=str(src), online_write=False)
+        cv.assert_called_once_with(input_path=str(src), online_write=False, progress_callback=None)
+
+    def test_passes_progress_callback_to_cv(self, tmp_path):
+        from wx4.audio_enhance import apply_clearvoice
+
+        cv = MagicMock()
+        cv.return_value = sentinel.enhanced
+        cb = MagicMock()
+        apply_clearvoice(tmp_path / "in.wav", tmp_path / "out.wav", cv, progress_callback=cb)
+        assert cv.call_args.kwargs["progress_callback"] is cb
 
     def test_calls_cv_write_with_output_path(self, tmp_path):
         from wx4.audio_enhance import apply_clearvoice

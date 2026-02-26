@@ -2,11 +2,12 @@
 Pipeline class and build_steps() factory for wx4.
 """
 
+import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from wx4.context import PipelineContext, Step
+from wx4.context import PipelineConfig, PipelineContext, Step
 
 
 @dataclass
@@ -31,6 +32,18 @@ class Pipeline:
         self.steps = steps
         self.callbacks = callbacks or []
 
+    def _make_step_progress(self, name: str) -> Callable[[int, int], None]:
+        """Return a (done, total) callable that fans out to all callbacks."""
+        callbacks = self.callbacks
+
+        def _progress(done: int, total: int) -> None:
+            for cb in callbacks:
+                fn = getattr(cb, "on_step_progress", None)
+                if fn is not None:
+                    fn(name, done, total)
+
+        return _progress
+
     def run(self, ctx: PipelineContext) -> PipelineContext:
         names = [s.name if isinstance(s, NamedStep) else getattr(s, "__name__", repr(s)) for s in self.steps]
         for cb in self.callbacks:
@@ -45,6 +58,8 @@ class Pipeline:
                 continue
 
             name = step.name if isinstance(step, NamedStep) else getattr(step, "__name__", repr(step))
+            # Inject a per-step progress forwarder so steps can report chunk progress
+            ctx = dataclasses.replace(ctx, step_progress=self._make_step_progress(name))
             for cb in self.callbacks:
                 cb.on_step_start(name, ctx)
             ctx = step(ctx)
@@ -59,6 +74,7 @@ class Pipeline:
 
 # Output path lambdas for build_steps()
 _ENHANCE_OUT = lambda ctx: ctx.src.parent / f"{ctx.src.stem}_enhanced.m4a"
+_COMPRESS_OUT = lambda ctx: ctx.src.parent / f"{ctx.src.stem}_compressed.mp4"
 
 def _transcript_json(ctx: PipelineContext) -> Path:
     audio = ctx.enhanced if ctx.enhanced is not None else ctx.src
@@ -73,22 +89,22 @@ def _video_out(ctx: PipelineContext) -> Path:
     return audio.parent / f"{audio.stem}_timestamps.mp4"
 
 
-def build_steps(
-    skip_enhance: bool = False,
-    videooutput: bool = False,
-    force: bool = False,
-) -> List[NamedStep]:
+def build_steps(config: PipelineConfig | None = None) -> List[NamedStep]:
     """
-    Build the ordered list of pipeline steps based on CLI flags.
+    Build the ordered list of pipeline steps based on composition config.
 
     Default order:
       cache_check -> enhance -> cache_save -> transcribe -> srt [-> video]
-    With skip_enhance=True:
+    With config.skip_enhance=True:
       transcribe -> srt [-> video]
     """
+    if config is None:
+        config = PipelineConfig()
+
     from wx4.steps import (
         cache_check_step,
         cache_save_step,
+        compress_step,
         enhance_step,
         srt_step,
         transcribe_step,
@@ -97,7 +113,7 @@ def build_steps(
 
     steps: List[NamedStep] = []
 
-    if not skip_enhance:
+    if not config.skip_enhance:
         # cache_check and cache_save have no output_fn (their skip logic is internal)
         steps.append(NamedStep("cache_check", cache_check_step))
         steps.append(NamedStep("enhance", enhance_step, _ENHANCE_OUT))
@@ -106,7 +122,10 @@ def build_steps(
     steps.append(NamedStep("transcribe", transcribe_step, _transcript_json))
     steps.append(NamedStep("srt", srt_step, _srt_out))
 
-    if videooutput:
+    if config.videooutput:
         steps.append(NamedStep("video", video_step, _video_out))
+
+    if config.compress:
+        steps.append(NamedStep("compress", compress_step, _COMPRESS_OUT))
 
     return steps

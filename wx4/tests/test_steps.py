@@ -443,3 +443,187 @@ class TestVideoStep:
 
             result = video_step(ctx)
         assert "video" in result.timings
+
+
+# ---------------------------------------------------------------------------
+# TestCompressStep
+# ---------------------------------------------------------------------------
+
+
+def _compress_patches(info, lufs_instance=None):
+    """Return a dict of patch targets -> mocks for compress_step dependencies."""
+    if lufs_instance is None:
+        lufs_instance = MagicMock()
+    lufs_cls = MagicMock()
+    lufs_cls.from_measured.return_value = lufs_instance
+    lufs_cls.noop.return_value = lufs_instance
+    return dict(
+        probe_video=MagicMock(return_value=info),
+        measure_audio_lufs=MagicMock(return_value=-20.0),
+        LufsInfo=lufs_cls,
+        detect_best_encoder=MagicMock(return_value=MagicMock()),
+        calculate_video_bitrate=MagicMock(return_value=500_000),
+        _compress_video=MagicMock(),
+    )
+
+
+def _video_info(has_audio=True):
+    info = MagicMock()
+    info.has_audio = has_audio
+    info.duration_s = 60.0
+    return info
+
+
+class TestCompressStep:
+    def test_calls_probe_video_with_src(self, tmp_path):
+        ctx = _ctx(tmp_path, compress_ratio=0.40)
+        patches = _compress_patches(_video_info())
+
+        with patch.multiple("wx4.steps", **patches):
+            from wx4.steps import compress_step
+
+            compress_step(ctx)
+
+        patches["probe_video"].assert_called_once_with(ctx.src)
+
+    def test_raises_clearly_when_probe_fails(self, tmp_path):
+        ctx = _ctx(tmp_path)
+
+        with patch("wx4.steps.probe_video", side_effect=RuntimeError("not a video")):
+            from wx4.steps import compress_step
+
+            with pytest.raises(RuntimeError, match="compress_step"):
+                compress_step(ctx)
+
+    def test_measures_lufs_when_has_audio(self, tmp_path):
+        ctx = _ctx(tmp_path)
+        patches = _compress_patches(_video_info(has_audio=True))
+
+        with patch.multiple("wx4.steps", **patches):
+            from wx4.steps import compress_step
+
+            compress_step(ctx)
+
+        patches["measure_audio_lufs"].assert_called_once_with(ctx.src)
+
+    def test_uses_lufs_noop_when_no_audio(self, tmp_path):
+        ctx = _ctx(tmp_path)
+        patches = _compress_patches(_video_info(has_audio=False))
+
+        with patch.multiple("wx4.steps", **patches):
+            from wx4.steps import compress_step
+
+            compress_step(ctx)
+
+        patches["measure_audio_lufs"].assert_not_called()
+        patches["LufsInfo"].noop.assert_called_once()
+
+    def test_calls_detect_encoder_with_compress_encoder(self, tmp_path):
+        ctx = _ctx(tmp_path, compress_encoder="h264_nvenc")
+        patches = _compress_patches(_video_info())
+
+        with patch.multiple("wx4.steps", **patches):
+            from wx4.steps import compress_step
+
+            compress_step(ctx)
+
+        patches["detect_best_encoder"].assert_called_once_with(force="h264_nvenc")
+
+    def test_calls_calculate_bitrate_with_compress_ratio(self, tmp_path):
+        ctx = _ctx(tmp_path, compress_ratio=0.30)
+        info = _video_info()
+        patches = _compress_patches(info)
+
+        with patch.multiple("wx4.steps", **patches):
+            from wx4.steps import compress_step
+
+            compress_step(ctx)
+
+        patches["calculate_video_bitrate"].assert_called_once_with(info, 0.30)
+
+    def test_calls_compress_video(self, tmp_path):
+        ctx = _ctx(tmp_path)
+        patches = _compress_patches(_video_info())
+
+        with patch.multiple("wx4.steps", **patches):
+            from wx4.steps import compress_step
+
+            compress_step(ctx)
+
+        patches["_compress_video"].assert_called_once()
+
+    def test_sets_video_compressed_on_ctx(self, tmp_path):
+        ctx = _ctx(tmp_path)
+        patches = _compress_patches(_video_info())
+
+        with patch.multiple("wx4.steps", **patches):
+            from wx4.steps import compress_step
+
+            result = compress_step(ctx)
+
+        assert result.video_compressed is not None
+
+    def test_output_path_is_src_stem_compressed_mp4(self, tmp_path):
+        ctx = _ctx(tmp_path)
+        patches = _compress_patches(_video_info())
+
+        with patch.multiple("wx4.steps", **patches):
+            from wx4.steps import compress_step
+
+            result = compress_step(ctx)
+
+        expected = ctx.src.parent / f"{ctx.src.stem}_compressed.mp4"
+        assert result.video_compressed == expected
+
+    def test_timing_recorded(self, tmp_path):
+        ctx = _ctx(tmp_path)
+        patches = _compress_patches(_video_info())
+
+        with patch.multiple("wx4.steps", **patches):
+            from wx4.steps import compress_step
+
+            result = compress_step(ctx)
+
+        assert "compress" in result.timings
+
+
+# ---------------------------------------------------------------------------
+# TestEnhanceStepPassesStepProgress
+# ---------------------------------------------------------------------------
+
+
+class TestEnhanceStepPassesStepProgress:
+    def test_step_progress_forwarded_to_apply_clearvoice(self, tmp_path):
+        cb = MagicMock()
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock(), step_progress=cb)
+
+        def fake_to_aac(src, dst, **kw):
+            dst.write_bytes(b"aac")
+            return True
+
+        with patch("wx4.steps.extract_to_wav", return_value=True), patch(
+            "wx4.steps.normalize_lufs"
+        ), patch("wx4.steps.apply_clearvoice") as m_enh, patch(
+            "wx4.steps.to_aac", side_effect=fake_to_aac
+        ):
+            from wx4.steps import enhance_step
+            enhance_step(ctx)
+
+        assert m_enh.call_args.kwargs.get("progress_callback") is cb
+
+    def test_step_progress_none_when_not_set(self, tmp_path):
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+
+        def fake_to_aac(src, dst, **kw):
+            dst.write_bytes(b"aac")
+            return True
+
+        with patch("wx4.steps.extract_to_wav", return_value=True), patch(
+            "wx4.steps.normalize_lufs"
+        ), patch("wx4.steps.apply_clearvoice") as m_enh, patch(
+            "wx4.steps.to_aac", side_effect=fake_to_aac
+        ):
+            from wx4.steps import enhance_step
+            enhance_step(ctx)
+
+        assert m_enh.call_args.kwargs.get("progress_callback") is None

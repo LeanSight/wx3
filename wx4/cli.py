@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from wx4.context import PipelineContext
+from wx4.context import PipelineConfig, PipelineContext
 from wx4.pipeline import Pipeline, build_steps
 from wx4.speakers import parse_speakers_map
 
@@ -34,6 +34,11 @@ class RichProgressCallback:
 
     def on_step_start(self, name: str, ctx: PipelineContext) -> None:
         self._step_task = self._p.add_task(f"  {name}", total=None)
+
+    def on_step_progress(self, name: str, done: int, total: int) -> None:
+        """Update the current step's progress bar with chunk-level granularity."""
+        if self._step_task is not None:
+            self._p.update(self._step_task, total=total, completed=done)
 
     def on_step_end(self, name: str, ctx: PipelineContext) -> None:
         if self._step_task is not None:
@@ -73,6 +78,13 @@ def main(
     api_key: Optional[str] = typer.Option(
         None, "--api-key", help="AssemblyAI API key (or set ASSEMBLY_AI_KEY env var)"
     ),
+    compress: bool = typer.Option(False, "--compress", help="Compress source video after transcription"),
+    compress_ratio: float = typer.Option(
+        0.40, "--compress-ratio", help="Compression ratio (0.40 = 40%% of original size)"
+    ),
+    compress_encoder: Optional[str] = typer.Option(
+        None, "--compress-encoder", help="Force video encoder: cpu, h264_nvenc, h264_amf, h264_qsv"
+    ),
 ) -> None:
     if not files:
         typer.echo(ctx.get_help())
@@ -83,7 +95,12 @@ def main(
         os.environ["ASSEMBLY_AI_KEY"] = api_key
     
     speaker_names = parse_speakers_map(speakers_map)
-    steps = build_steps(skip_enhance=skip_enhance, videooutput=videooutput, force=force)
+    config = PipelineConfig(
+        skip_enhance=skip_enhance,
+        videooutput=videooutput,
+        compress=compress,
+    )
+    steps = build_steps(config)
 
     cv = None
     if not skip_enhance:
@@ -115,9 +132,9 @@ def main(
                 language=language,
                 speakers=speakers,
                 speaker_names=speaker_names,
-                skip_enhance=skip_enhance,
                 force=force,
-                videooutput=videooutput,
+                compress_ratio=compress_ratio,
+                compress_encoder=compress_encoder,
                 cv=cv,
             )
             pipeline_ctx = pipeline.run(pipeline_ctx)
@@ -126,9 +143,11 @@ def main(
     table = Table(title="Summary", box=box.ASCII)
     table.add_column("File")
     table.add_column("SRT")
+    table.add_column("Compressed")
     for result_ctx in results:
         srt_name = result_ctx.srt.name if result_ctx.srt else "N/A"
-        table.add_row(result_ctx.src.name, srt_name)
+        compressed = result_ctx.video_compressed.name if result_ctx.video_compressed else "-"
+        table.add_row(result_ctx.src.name, srt_name, compressed)
     console.print(table)
 
 
