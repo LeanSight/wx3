@@ -237,3 +237,132 @@ class TestAcceptance:
             result = pipeline.run(ctx)
 
         assert result.video_out is None
+
+
+# ---------------------------------------------------------------------------
+# AT: Whisper (wx3) backend integration
+# ---------------------------------------------------------------------------
+
+
+def _make_whisper_transcribe_mock(tmp_path, stem):
+    """
+    Side effect that simulates transcribe_with_whisper() creating output files.
+    Output JSON is in AssemblyAI word-level format (start/end in ms).
+    """
+    words = [
+        {"text": "hola", "start": 0, "end": 400, "confidence": 1.0, "speaker": "SPEAKER_00"},
+        {"text": "mundo.", "start": 500, "end": 1000, "confidence": 1.0, "speaker": "SPEAKER_00"},
+    ]
+    json_path = tmp_path / f"{stem}_timestamps.json"
+    txt_path = tmp_path / f"{stem}_transcript.txt"
+
+    def _side_effect(audio, lang=None, speakers=None, hf_token=None, device="auto", whisper_model=None):
+        json_path.write_text(json.dumps(words), encoding="utf-8")
+        txt_path.write_text("[00:00] Speaker SPEAKER_00: hola mundo.", encoding="utf-8")
+        return txt_path, json_path
+
+    return _side_effect
+
+
+class TestAcceptanceWhisperBackend:
+    def test_whisper_backend_produces_srt(self, tmp_path):
+        """
+        AT-1: transcribe_backend='whisper' -> pipeline runs transcribe_with_whisper
+        and produces a valid SRT file (same shape as AssemblyAI path).
+        """
+        src = tmp_path / "meeting.mp3"
+        src.write_bytes(b"fake audio")
+        transcribe_mock = _make_whisper_transcribe_mock(tmp_path, "meeting")
+
+        with patch("wx4.steps.transcribe_with_whisper", side_effect=transcribe_mock):
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(
+                src=src,
+                transcribe_backend="whisper",
+                hf_token="hf_fake",
+            )
+            steps = build_steps(PipelineConfig(skip_enhance=True))
+            pipeline = Pipeline(steps)
+            result = pipeline.run(ctx)
+
+        assert result.srt is not None
+        assert result.srt.suffix == ".srt"
+        srt_content = result.srt.read_text(encoding="utf-8")
+        assert "hola" in srt_content
+
+    def test_whisper_backend_calls_transcribe_with_whisper_not_assemblyai(self, tmp_path):
+        """
+        AT-2: With backend='whisper', transcribe_assemblyai is NEVER called.
+        """
+        src = tmp_path / "meeting.mp3"
+        src.write_bytes(b"fake audio")
+        transcribe_mock = _make_whisper_transcribe_mock(tmp_path, "meeting")
+
+        with patch("wx4.steps.transcribe_with_whisper", side_effect=transcribe_mock) as mock_wh, \
+             patch("wx4.steps.transcribe_assemblyai") as mock_aai:
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(
+                src=src,
+                transcribe_backend="whisper",
+                hf_token="hf_fake",
+            )
+            steps = build_steps(PipelineConfig(skip_enhance=True))
+            Pipeline(steps).run(ctx)
+
+        mock_wh.assert_called_once()
+        mock_aai.assert_not_called()
+
+    def test_assemblyai_backend_unchanged(self, tmp_path):
+        """
+        AT-3: Default backend='assemblyai' -> transcribe_assemblyai is called, not whisper.
+        """
+        src = tmp_path / "meeting.mp3"
+        src.write_bytes(b"fake audio")
+        transcribe_mock = _make_transcribe_mock(tmp_path, "meeting")
+
+        with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock) as mock_aai, \
+             patch("wx4.steps.transcribe_with_whisper") as mock_wh:
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(src=src)  # default transcribe_backend="assemblyai"
+            steps = build_steps(PipelineConfig(skip_enhance=True))
+            Pipeline(steps).run(ctx)
+
+        mock_aai.assert_called_once()
+        mock_wh.assert_not_called()
+
+    def test_whisper_backend_passes_context_params(self, tmp_path):
+        """
+        AT-4: language, speakers, hf_token, device, whisper_model are forwarded
+        to transcribe_with_whisper.
+        """
+        src = tmp_path / "meeting.mp3"
+        src.write_bytes(b"fake audio")
+        transcribe_mock = _make_whisper_transcribe_mock(tmp_path, "meeting")
+
+        with patch("wx4.steps.transcribe_with_whisper", side_effect=transcribe_mock) as mock_wh:
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(
+                src=src,
+                transcribe_backend="whisper",
+                language="es",
+                speakers=2,
+                hf_token="hf_secret",
+                device="cpu",
+                whisper_model="openai/whisper-large-v3",
+            )
+            Pipeline(build_steps(PipelineConfig(skip_enhance=True))).run(ctx)
+
+        call_kwargs = mock_wh.call_args[1]
+        assert call_kwargs.get("lang") == "es"
+        assert call_kwargs.get("speakers") == 2
+        assert call_kwargs.get("hf_token") == "hf_secret"
+        assert call_kwargs.get("device") == "cpu"
+        assert call_kwargs.get("whisper_model") == "openai/whisper-large-v3"

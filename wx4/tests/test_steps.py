@@ -627,3 +627,68 @@ class TestEnhanceStepPassesStepProgress:
             enhance_step(ctx)
 
         assert m_enh.call_args.kwargs.get("progress_callback") is None
+
+
+# ---------------------------------------------------------------------------
+# TestTranscribeStepBackendBranching
+# ---------------------------------------------------------------------------
+
+
+class TestTranscribeStepBackendBranching:
+    def _make_files(self, tmp_path, stem):
+        txt = tmp_path / f"{stem}_transcript.txt"
+        jsn = tmp_path / f"{stem}_timestamps.json"
+        txt.write_text("", encoding="utf-8")
+        jsn.write_text("[]", encoding="utf-8")
+        return txt, jsn
+
+    def test_assemblyai_backend_calls_transcribe_assemblyai(self, tmp_path):
+        ctx = _ctx(tmp_path, transcribe_backend="assemblyai")
+        txt, jsn = self._make_files(tmp_path, "audio")
+        with patch("wx4.steps.transcribe_assemblyai", return_value=(txt, jsn)) as mock_aai, \
+             patch("wx4.steps.transcribe_with_whisper") as mock_wh:
+            from wx4.steps import transcribe_step
+            transcribe_step(ctx)
+        mock_aai.assert_called_once()
+        mock_wh.assert_not_called()
+
+    def test_whisper_backend_calls_transcribe_with_whisper(self, tmp_path):
+        ctx = _ctx(tmp_path, transcribe_backend="whisper", hf_token="hf_x")
+        txt, jsn = self._make_files(tmp_path, "audio")
+        with patch("wx4.steps.transcribe_with_whisper", return_value=(txt, jsn)) as mock_wh, \
+             patch("wx4.steps.transcribe_assemblyai") as mock_aai:
+            from wx4.steps import transcribe_step
+            transcribe_step(ctx)
+        mock_wh.assert_called_once()
+        mock_aai.assert_not_called()
+
+    def test_whisper_backend_forwards_hf_token(self, tmp_path):
+        ctx = _ctx(tmp_path, transcribe_backend="whisper", hf_token="hf_secret")
+        txt, jsn = self._make_files(tmp_path, "audio")
+        with patch("wx4.steps.transcribe_with_whisper", return_value=(txt, jsn)) as mock_wh:
+            from wx4.steps import transcribe_step
+            transcribe_step(ctx)
+        assert mock_wh.call_args.kwargs.get("hf_token") == "hf_secret"
+
+    def test_whisper_backend_forwards_device(self, tmp_path):
+        ctx = _ctx(tmp_path, transcribe_backend="whisper", hf_token="x", device="cpu")
+        txt, jsn = self._make_files(tmp_path, "audio")
+        with patch("wx4.steps.transcribe_with_whisper", return_value=(txt, jsn)) as mock_wh:
+            from wx4.steps import transcribe_step
+            transcribe_step(ctx)
+        assert mock_wh.call_args.kwargs.get("device") == "cpu"
+
+    def test_whisper_backend_forwards_whisper_model(self, tmp_path):
+        ctx = _ctx(tmp_path, transcribe_backend="whisper", hf_token="x",
+                   whisper_model="openai/whisper-small")
+        txt, jsn = self._make_files(tmp_path, "audio")
+        with patch("wx4.steps.transcribe_with_whisper", return_value=(txt, jsn)) as mock_wh:
+            from wx4.steps import transcribe_step
+            transcribe_step(ctx)
+        assert mock_wh.call_args.kwargs.get("whisper_model") == "openai/whisper-small"
+
+    def test_unknown_backend_raises_runtime_error(self, tmp_path):
+        ctx = _ctx(tmp_path, transcribe_backend="unknown_backend")
+        with pytest.raises(RuntimeError, match="unknown_backend"):
+            from wx4.steps import transcribe_step
+            transcribe_step(ctx)
