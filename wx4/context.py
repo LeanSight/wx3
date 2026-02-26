@@ -23,6 +23,7 @@ class PipelineContext:
     src: Path
 
     enhanced: Optional[Path] = None
+    normalized: Optional[Path] = None
     transcript_txt: Optional[Path] = None
     transcript_json: Optional[Path] = None
     srt: Optional[Path] = None

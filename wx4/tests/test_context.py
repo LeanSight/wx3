@@ -51,6 +51,7 @@ class TestPipelineContext:
         assert ctx.speakers is None
         assert ctx.speaker_names == {}
         assert ctx.enhanced is None
+        assert ctx.normalized is None
         assert ctx.transcript_txt is None
         assert ctx.transcript_json is None
         assert ctx.srt is None
