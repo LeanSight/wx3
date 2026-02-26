@@ -145,7 +145,7 @@ class TestEnhanceStep:
         result = enhance_step(ctx)
         assert result.enhanced == enhanced
 
-    def test_calls_extract_normalize_enhance_encode_on_miss(self, tmp_path):
+    def test_calls_only_clearvoice_and_encode_on_miss(self, tmp_path):
         ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
 
         def fake_to_aac(src, dst, **kw):
@@ -153,19 +153,18 @@ class TestEnhanceStep:
             return True
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True) as m_ext,
+            patch("wx4.steps.apply_clearvoice") as m_cv,
+            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.extract_to_wav") as m_ext,
             patch("wx4.steps.normalize_lufs") as m_norm,
-            patch("wx4.steps.apply_clearvoice") as m_enh,
-            patch("wx4.steps.to_aac", side_effect=fake_to_aac) as m_enc,
         ):
             from wx4.steps import enhance_step
 
             result = enhance_step(ctx)
 
-        m_ext.assert_called_once()
-        m_norm.assert_called_once()
-        m_enh.assert_called_once()
-        m_enc.assert_called_once()
+        m_ext.assert_not_called()
+        m_norm.assert_not_called()
+        m_cv.assert_called_once()
         assert result.enhanced is not None
 
     def test_raises_when_extract_fails(self, tmp_path):
@@ -199,6 +198,84 @@ class TestEnhanceStep:
 
         result = enhance_step(ctx)
         assert "enhance" in result.timings
+
+
+# ---------------------------------------------------------------------------
+# TestNormalizeStep
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeStep:
+    def test_calls_extract_normalize_encode(self, tmp_path):
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
+
+        def fake_to_aac(src, dst, **kw):
+            dst.write_bytes(b"aac")
+            return True
+
+        with (
+            patch("wx4.steps.extract_to_wav", return_value=True) as m_ext,
+            patch("wx4.steps.normalize_lufs") as m_norm,
+            patch("wx4.steps.to_aac", side_effect=fake_to_aac) as m_enc,
+        ):
+            from wx4.steps import normalize_step
+
+            result = normalize_step(ctx)
+
+        m_ext.assert_called_once()
+        m_norm.assert_called_once()
+        m_enc.assert_called_once()
+        assert result.normalized is not None
+        assert result.normalized.name.endswith("_normalized.m4a")
+
+    def test_skips_on_cache_hit(self, tmp_path):
+        norm = tmp_path / "audio_normalized.m4a"
+        ctx = _ctx(tmp_path, cache_hit=True, normalized=norm)
+
+        with patch("wx4.steps.extract_to_wav") as m_ext:
+            from wx4.steps import normalize_step
+
+            result = normalize_step(ctx)
+
+        m_ext.assert_not_called()
+        assert result.normalized == norm
+
+    def test_does_not_call_apply_clearvoice(self, tmp_path):
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
+
+        def fake_to_aac(src, dst, **kw):
+            dst.write_bytes(b"aac")
+            return True
+
+        with (
+            patch("wx4.steps.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize_lufs"),
+            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.apply_clearvoice") as m_cv,
+        ):
+            from wx4.steps import normalize_step
+
+            normalize_step(ctx)
+
+        m_cv.assert_not_called()
+
+    def test_timing_recorded(self, tmp_path):
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
+
+        def fake_to_aac(src, dst, **kw):
+            dst.write_bytes(b"aac")
+            return True
+
+        with (
+            patch("wx4.steps.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize_lufs"),
+            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
+        ):
+            from wx4.steps import normalize_step
+
+            result = normalize_step(ctx)
+
+        assert "normalize" in result.timings
 
 
 # ---------------------------------------------------------------------------

@@ -44,7 +44,9 @@ def cache_check_step(ctx: PipelineContext) -> PipelineContext:
 
     if ctx.force:
         return dataclasses.replace(
-            ctx, cache_hit=False, timings={**ctx.timings, "cache_check": time.time() - t0}
+            ctx,
+            cache_hit=False,
+            timings={**ctx.timings, "cache_check": time.time() - t0},
         )
 
     cache = load_cache()
@@ -71,15 +73,64 @@ def cache_check_step(ctx: PipelineContext) -> PipelineContext:
 
 
 # ---------------------------------------------------------------------------
+# normalize_step
+# ---------------------------------------------------------------------------
+
+
+def normalize_step(ctx: PipelineContext) -> PipelineContext:
+    """
+    Run normalization: extract -> normalize LUFS -> encode.
+    Returns immediately (with timing) if cache_hit is already True.
+    Raises RuntimeError if extract or encode fails.
+    """
+    t0 = time.time()
+
+    if ctx.cache_hit and ctx.normalized is not None:
+        return dataclasses.replace(
+            ctx, timings={**ctx.timings, "normalize": time.time() - t0}
+        )
+
+    stem = ctx.src.stem
+    d = ctx.src.parent
+    tmp_raw = d / f"{stem}._tmp_raw.wav"
+    tmp_norm = d / f"{stem}._tmp_norm.wav"
+    ext = "m4a" if ctx.output_m4a else "wav"
+    out = d / f"{stem}_normalized.{ext}"
+
+    try:
+        if not extract_to_wav(ctx.src, tmp_raw):
+            raise RuntimeError(f"extract_to_wav failed for {ctx.src.name}")
+
+        normalize_lufs(tmp_raw, tmp_norm)
+
+        if ctx.output_m4a:
+            tmp_out = out.with_suffix(".m4a.tmp")
+            if not to_aac(tmp_norm, tmp_out):
+                raise RuntimeError(f"to_aac failed for {ctx.src.name}")
+            tmp_out.rename(out)  # atomic
+        else:
+            tmp_norm.rename(out)  # already atomic
+            tmp_norm = None
+    finally:
+        for f in [tmp_raw, tmp_norm]:
+            if f is not None and f.exists():
+                f.unlink()
+
+    return dataclasses.replace(
+        ctx, normalized=out, timings={**ctx.timings, "normalize": time.time() - t0}
+    )
+
+
+# ---------------------------------------------------------------------------
 # enhance_step
 # ---------------------------------------------------------------------------
 
 
 def enhance_step(ctx: PipelineContext) -> PipelineContext:
     """
-    Run the full enhance pipeline: extract -> normalize -> ClearVoice -> encode.
+    Run ClearVoice enhancement on normalized audio (or src if not normalized).
     Returns immediately (with timing) if cache_hit is already True.
-    Raises RuntimeError if extract or encode fails.
+    Raises RuntimeError if encode fails.
     """
     t0 = time.time()
 
@@ -90,18 +141,16 @@ def enhance_step(ctx: PipelineContext) -> PipelineContext:
 
     stem = ctx.src.stem
     d = ctx.src.parent
-    tmp_raw = d / f"{stem}._tmp_raw.wav"
-    tmp_norm = d / f"{stem}._tmp_norm.wav"
     tmp_enh = d / f"{stem}._tmp_enh.wav"
     ext = "m4a" if ctx.output_m4a else "wav"
     out = d / f"{stem}_enhanced.{ext}"
 
-    try:
-        if not extract_to_wav(ctx.src, tmp_raw):
-            raise RuntimeError(f"extract_to_wav failed for {ctx.src.name}")
+    audio_input = ctx.normalized if ctx.normalized is not None else ctx.src
 
-        normalize_lufs(tmp_raw, tmp_norm)
-        apply_clearvoice(tmp_norm, tmp_enh, ctx.cv, progress_callback=ctx.step_progress)
+    try:
+        apply_clearvoice(
+            audio_input, tmp_enh, ctx.cv, progress_callback=ctx.step_progress
+        )
 
         if ctx.output_m4a:
             tmp_out = out.with_suffix(".m4a.tmp")
@@ -109,12 +158,11 @@ def enhance_step(ctx: PipelineContext) -> PipelineContext:
                 raise RuntimeError(f"to_aac failed for {ctx.src.name}")
             tmp_out.rename(out)  # atomic
         else:
-            tmp_enh.rename(out)  # already atomic; consumed from tmp list
-            tmp_enh = None  # don't try to unlink in finally
+            tmp_enh.rename(out)  # already atomic
+            tmp_enh = None
     finally:
-        for f in [tmp_raw, tmp_norm, tmp_enh]:
-            if f is not None and f.exists():
-                f.unlink()
+        if tmp_enh is not None and tmp_enh.exists():
+            tmp_enh.unlink()
 
     return dataclasses.replace(
         ctx, enhanced=out, timings={**ctx.timings, "enhance": time.time() - t0}
