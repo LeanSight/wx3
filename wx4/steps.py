@@ -123,8 +123,14 @@ def normalize_step(ctx: PipelineContext) -> PipelineContext:
     tmp_norm = d / f"{stem}._tmp_norm.wav"
 
     try:
+        if ctx.step_progress:
+            ctx.step_progress(0, 3)
+
         if not extract_to_wav(ctx.src, tmp_raw):
             raise RuntimeError(f"extract_to_wav failed for {ctx.src.name}")
+
+        if ctx.step_progress:
+            ctx.step_progress(1, 3)
 
         normalize_lufs(tmp_raw, tmp_norm, progress_callback=ctx.step_progress)
 
@@ -136,6 +142,9 @@ def normalize_step(ctx: PipelineContext) -> PipelineContext:
         else:
             tmp_norm.rename(out)  # already atomic
             tmp_norm = None
+
+        if ctx.step_progress:
+            ctx.step_progress(3, 3)
     finally:
         for f in [tmp_raw, tmp_norm]:
             if f is not None and f.exists():

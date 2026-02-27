@@ -755,6 +755,48 @@ class TestNormalizeProgress:
         assert len(progress_calls) >= 1
         assert all(0 <= d <= t for d, t in progress_calls)
 
+    def test_normalize_step_reports_milestones(self, tmp_path):
+        """
+        AT: normalize_step llama step_progress en al menos 2 momentos distintos.
+        """
+        from pathlib import Path
+        from unittest.mock import patch, MagicMock
+
+        from wx4.context import PipelineContext
+        from wx4.steps import normalize_step
+
+        src = tmp_path / "meeting.mp3"
+        src.write_bytes(b"fake audio")
+
+        progress_calls = []
+
+        def _capture_progress(done, total):
+            progress_calls.append((done, total))
+
+        def fake_to_aac(src, dst, **kw):
+            dst.write_bytes(b"aac")
+            return True
+
+        def fake_normalize_lufs(src, dst, progress_callback=None):
+            if progress_callback:
+                progress_callback(50, 100)
+            return True
+
+        ctx = PipelineContext(
+            src=src,
+            output_m4a=True,
+            step_progress=_capture_progress,
+        )
+
+        with (
+            patch("wx4.steps.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize_lufs", side_effect=fake_normalize_lufs),
+            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
+        ):
+            normalize_step(ctx)
+
+        assert len(progress_calls) >= 2
+
 
 class TestUIBehavior:
     """ATDD tests for UI behavior - filename in header, progress bars, etc."""
