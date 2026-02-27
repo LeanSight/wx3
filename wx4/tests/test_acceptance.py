@@ -404,6 +404,18 @@ class TestAcceptanceWhisperBackend:
         assert result == "v1"
         assert len(calls) == 1
 
+    def test_pipeline_context_has_no_cv_field(self, tmp_path):
+        """
+        AT: PipelineContext no debe tener campo cv (campo muerto eliminado).
+        """
+        from wx4.context import PipelineContext
+        from pathlib import Path
+
+        src = tmp_path / "audio.mp3"
+        src.write_bytes(b"audio")
+        ctx = PipelineContext(src=src)
+        assert not hasattr(ctx, "cv")
+
     def test_expand_paths_does_not_call_ffprobe(self, tmp_path):
         """
         AT: _expand_paths no debe llamar a ffprobe - usa whitelist de extensiones.
@@ -557,7 +569,7 @@ class TestAcceptanceWhisperBackend:
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
-            ctx = PipelineContext(src=src, cv=MagicMock())
+            ctx = PipelineContext(src=src)
             steps = build_steps(PipelineConfig(skip_normalize=True))
             result = Pipeline(steps).run(ctx)
 

@@ -146,7 +146,7 @@ class TestEnhanceStep:
         assert result.enhanced == enhanced
 
     def test_calls_only_clearvoice_and_encode_on_miss(self, tmp_path):
-        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
         mock_cv = MagicMock()
 
         def fake_to_aac(src, dst, **kw):
@@ -170,7 +170,7 @@ class TestEnhanceStep:
         assert result.enhanced is not None
 
     def test_raises_when_extract_fails(self, tmp_path):
-        ctx = _ctx(tmp_path, cache_hit=False, cv=MagicMock())
+        ctx = _ctx(tmp_path, cache_hit=False)
 
         with (
             patch("wx4.steps.extract_to_wav", return_value=False),
@@ -182,7 +182,7 @@ class TestEnhanceStep:
                 enhance_step(ctx)
 
     def test_raises_when_encode_fails(self, tmp_path):
-        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
 
         with (
             patch("wx4.steps.extract_to_wav", return_value=True),
@@ -293,7 +293,7 @@ class TestNormalizeStep:
 class TestEnhanceStepAtomicity:
     def test_tmp_files_removed_after_success(self, tmp_path):
         """The 3 tmp files must NOT exist in the directory after a successful enhance."""
-        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
         stem = ctx.src.stem
 
         def fake_to_aac(src, dst, **kw):
@@ -317,7 +317,7 @@ class TestEnhanceStepAtomicity:
 
     def test_cleanup_runs_even_if_encode_fails(self, tmp_path):
         """tmp_raw and tmp_norm must be cleaned up even if to_aac raises."""
-        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
         stem = ctx.src.stem
 
         # Simulate tmp files being created by normalize/enhance before encode fails
@@ -353,7 +353,7 @@ class TestEnhanceStepAtomicity:
 
     def test_final_output_not_written_when_encode_fails(self, tmp_path):
         """If to_aac fails, the final _enhanced.m4a must NOT exist."""
-        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
         out = tmp_path / f"{ctx.src.stem}_enhanced.m4a"
 
         with (
@@ -785,9 +785,7 @@ class TestCompressStep:
 class TestEnhanceStepPassesStepProgress:
     def test_step_progress_forwarded_to_apply_clearvoice(self, tmp_path):
         cb = MagicMock()
-        ctx = _ctx(
-            tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock(), step_progress=cb
-        )
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, step_progress=cb)
 
         def fake_to_aac(src, dst, **kw):
             dst.write_bytes(b"aac")
@@ -807,7 +805,7 @@ class TestEnhanceStepPassesStepProgress:
         assert m_enh.call_args.kwargs.get("progress_callback") is cb
 
     def test_step_progress_none_when_not_set(self, tmp_path):
-        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
 
         def fake_to_aac(src, dst, **kw):
             dst.write_bytes(b"aac")

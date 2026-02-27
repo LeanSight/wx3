@@ -364,7 +364,6 @@ def main(
             speaker_names=speaker_names,
             force=force,
             compress_ratio=compress if compress is not None else 0.40,
-            cv=None,  # Lazy loaded in enhance_step via _get_model
             transcribe_backend=backend,
             hf_token=hf_token,
             device=device,

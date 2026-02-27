@@ -68,7 +68,6 @@ class TestPipelineContext:
         assert ctx.srt is None
         assert ctx.video_out is None
         assert ctx.cache_hit is False
-        assert ctx.cv is None
         assert ctx.compress_ratio is None
         assert ctx.video_compressed is None
 

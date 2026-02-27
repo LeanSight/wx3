@@ -39,7 +39,6 @@ class PipelineContext:
     compress_ratio: Optional[float] = None
     video_compressed: Optional[Path] = None
 
-    cv: Any = None
     # Injected by Pipeline.run() before each step; fires all callbacks'
     # on_step_progress(step_name, done, total). Steps read this to report
     # fine-grained progress without depending on Rich directly.
