@@ -72,6 +72,9 @@ INTERMEDIATE_BY_STEP = {
     "srt": "_timestamps.srt",
     "video": "_timestamps.mp4",
     "compress": "_compressed.mp4",
+    # Archivos temporales de procesamiento
+    "tmp_raw": "._tmp_raw.wav",
+    "tmp_norm": "._tmp_norm.wav",
 }
 
 # Sufijos unicos (deduplicados) para filtrado de archivos

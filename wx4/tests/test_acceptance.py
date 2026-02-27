@@ -416,6 +416,24 @@ class TestAcceptanceWhisperBackend:
         ctx = PipelineContext(src=src)
         assert not hasattr(ctx, "cv")
 
+    def test_tmp_raw_tmp_norm_are_intermediate_files(self, tmp_path):
+        """
+        AT: Archivos con sufijos _tmp_raw y _tmp_norm deben ser ignorados.
+        """
+        from wx4.cli import _is_processable_file
+
+        tmp_raw_file = tmp_path / "audio._tmp_raw.wav"
+        tmp_raw_file.write_bytes(b"fake")
+        assert _is_processable_file(tmp_raw_file) is False
+
+        tmp_norm_file = tmp_path / "audio._tmp_norm.wav"
+        tmp_norm_file.write_bytes(b"fake")
+        assert _is_processable_file(tmp_norm_file) is False
+
+        combined_file = tmp_path / "audio._tmp_raw._tmp_norm.wav"
+        combined_file.write_bytes(b"fake")
+        assert _is_processable_file(combined_file) is False
+
     def test_expand_paths_does_not_call_ffprobe(self, tmp_path):
         """
         AT: _expand_paths no debe llamar a ffprobe - usa whitelist de extensiones.
@@ -658,10 +676,13 @@ def test_progress_task_has_empty_description():
 
     ctx = PipelineContext(src=MagicMock())
     cb.on_pipeline_start(["compress"], ctx)
-    cb.on_step_start("compress", ctx)
+    try:
+        cb.on_step_start("compress", ctx)
 
-    call_args = progress.add_task.call_args
-    assert call_args.kwargs.get("description") == "" or call_args.args[0] == ""
+        call_args = progress.add_task.call_args
+        assert call_args.kwargs.get("description") == "" or call_args.args[0] == ""
+    finally:
+        cb._live.stop()
 
 
 def test_running_step_renders_colored_icon():
@@ -681,12 +702,15 @@ def test_running_step_renders_colored_icon():
 
     ctx = PipelineContext(src=Path("/test/audio.mp3"))
     cb.on_pipeline_start(["enhance"], ctx)
-    cb._step_states["enhance"] = "running"
-    cb._progress_task = None
+    try:
+        cb._step_states["enhance"] = "running"
+        cb._progress_task = None
 
-    tree = cb._render_tree()
-    console.print(tree)
+        tree = cb._render_tree()
+        console.print(tree)
 
-    output = buf.getvalue()
-    assert "[cyan]" not in output
-    assert ">" in output
+        output = buf.getvalue()
+        assert "[cyan]" not in output
+        assert ">" in output
+    finally:
+        cb._live.stop()
