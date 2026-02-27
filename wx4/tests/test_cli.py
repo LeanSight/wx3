@@ -257,9 +257,10 @@ class TestCli:
 
     def test_clearvoice_loaded_when_not_skip_enhance(self, tmp_path):
         """When skip_enhance=False, ClearVoice is available via _get_model (lazy load)."""
-        from wx4.cli import _get_model
+        from wx4.model_cache import _get_model, _clear_model_cache
         from unittest.mock import MagicMock
 
+        _clear_model_cache()
         console = MagicMock()
         loader_called = []
 

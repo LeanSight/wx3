@@ -393,6 +393,17 @@ def _make_whisper_transcribe_mock(tmp_path, stem):
 
 
 class TestAcceptanceWhisperBackend:
+    def test_get_model_importable_from_model_cache(self, tmp_path):
+        """
+        AT: _get_model debe ser importable desde wx4.model_cache.
+        """
+        from wx4.model_cache import _get_model
+
+        calls = []
+        result = _get_model("TestModel", lambda: calls.append(1) or "v1", None)
+        assert result == "v1"
+        assert len(calls) == 1
+
     def test_expand_paths_does_not_call_ffprobe(self, tmp_path):
         """
         AT: _expand_paths no debe llamar a ffprobe - usa whitelist de extensiones.

@@ -25,6 +25,7 @@ from wx4.compress_video import (
 )
 from wx4.context import INTERMEDIATE_BY_STEP, PipelineContext
 from wx4.format_srt import words_to_srt
+from wx4.model_cache import _get_model
 from wx4.transcribe_aai import transcribe_assemblyai
 from wx4.video_black import audio_to_black_video
 
@@ -132,6 +133,16 @@ def normalize_step(ctx: PipelineContext) -> PipelineContext:
 # ---------------------------------------------------------------------------
 
 
+def _load_clearvoice() -> object:
+    """
+    Load ClearVoice model (MossFormer2) on demand.
+    This function is called lazily via _get_model.
+    """
+    from clearvoice import MossFormer2
+
+    return MossFormer2()
+
+
 def enhance_step(ctx: PipelineContext) -> PipelineContext:
     """
     Run ClearVoice enhancement on normalized audio (or src if not normalized).
@@ -153,10 +164,10 @@ def enhance_step(ctx: PipelineContext) -> PipelineContext:
 
     audio_input = ctx.normalized if ctx.normalized is not None else ctx.src
 
+    cv = _get_model("MossFormer2", _load_clearvoice, None)
+
     try:
-        apply_clearvoice(
-            audio_input, tmp_enh, ctx.cv, progress_callback=ctx.step_progress
-        )
+        apply_clearvoice(audio_input, tmp_enh, cv, progress_callback=ctx.step_progress)
 
         if ctx.output_m4a:
             tmp_out = out.with_suffix(".m4a.tmp")
