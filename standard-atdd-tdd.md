@@ -39,6 +39,28 @@
 - Un slice = un commit = un push
 - Nunca avanzar al slice N+1 si el slice N no esta en GREEN
 
+### Cobertura en fronteras entre capas (wiring tests)
+
+Unit tests aislados en cada capa no garantizan que los valores fluyan
+correctamente entre capas. Este es el "integration gap": dos capas
+pueden tener todos sus unit tests en GREEN y aun asi conectarse mal.
+
+El patron GOOS (Growing Object-Oriented Software Guided by Tests) lo
+resuelve con el doble loop:
+- El AT (loop externo) falla si el "cableado" entre capas es incorrecto.
+- Los unit tests (loop interno) validan la logica de cada capa por separado.
+
+Si el AT cubre el comportamiento de extremo a extremo, los bugs de
+"wiring" —valor construido en la capa A, consumido incorrectamente en
+la capa B— quedan atrapados automaticamente en el loop externo.
+
+Regla: por cada comportamiento relevante, el AT debe ejercer el camino
+completo desde la entrada del sistema (CLI, API, evento) hasta el
+efecto observable (archivo generado, llamada a funcion, estado del
+contexto). Si no hay AT para ese comportamiento, agregar al menos un
+test de integracion que cubra la frontera critica, incluyendo el caso
+por defecto (ausencia del flag u opcion).
+
 
 ### Tests existentes y cambios de comportamiento
 
@@ -64,5 +86,5 @@ Cuando cambias el comportamiento de una funcionalidad (no solo UI):
 
 El objetivo es que todos los tests esten siempre en GREEN.
 
-## Seguimeinto de planes basados en slices
-**NUNCA** cambiar el orden de implementacion de los slices presentadi en un plan 
+## Seguimiento de planes basados en slices
+**NUNCA** cambiar el orden de implementacion de los slices presentado en un plan

@@ -362,7 +362,7 @@ def main(
             speakers=speakers,
             speaker_names=speaker_names,
             force=force,
-            compress_ratio=compress if compress is not None else 0.40,
+            compress_ratio=compress,
             transcribe_backend=backend,
             hf_token=hf_token,
             device=device,

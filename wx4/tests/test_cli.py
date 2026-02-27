@@ -301,6 +301,26 @@ class TestCli:
         assert isinstance(config, PipelineConfig)
         assert config.compress_ratio == pytest.approx(0.4)
 
+    def test_no_compress_flag_leaves_compress_ratio_none(self, tmp_path):
+        from typer.testing import CliRunner
+
+        from wx4.cli import app
+
+        f = tmp_path / "audio.mp3"
+        f.write_bytes(b"audio")
+        mock_ctx = _make_ctx(tmp_path)
+
+        with (
+            patch("wx4.cli.Pipeline") as MockPipeline,
+            patch("wx4.cli.build_steps", return_value=[]),
+        ):
+            MockPipeline.return_value.run.return_value = mock_ctx
+            runner = CliRunner()
+            runner.invoke(app, [str(f)])
+
+        pipeline_ctx_used = MockPipeline.return_value.run.call_args[0][0]
+        assert pipeline_ctx_used.compress_ratio is None
+
     def test_summary_table_shows_compressed_filename(self, tmp_path):
         from typer.testing import CliRunner
 
