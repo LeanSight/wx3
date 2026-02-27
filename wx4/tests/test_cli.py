@@ -934,3 +934,45 @@ class TestExpandPaths:
         names = [p.name for p in result]
         assert "meeting.mp4" in names
         assert "audio.m4a" in names
+
+
+class TestMediaExtensionsWhitelist:
+    """Tests for media extensions whitelist."""
+
+    def test_is_processable_file_accepts_video_extensions(self, tmp_path):
+        from wx4.cli import _is_processable_file
+
+        for ext in [".mp4", ".mkv", ".mov", ".avi", ".webm"]:
+            f = tmp_path / f"video{ext}"
+            f.write_bytes(b"fake")
+            assert _is_processable_file(f) is True
+
+    def test_is_processable_file_accepts_audio_extensions(self, tmp_path):
+        from wx4.cli import _is_processable_file
+
+        for ext in [".mp3", ".m4a", ".wav", ".flac", ".aac", ".opus"]:
+            f = tmp_path / f"audio{ext}"
+            f.write_bytes(b"fake")
+            assert _is_processable_file(f) is True
+
+    def test_is_processable_file_rejects_non_media(self, tmp_path):
+        from wx4.cli import _is_processable_file
+
+        for ext in [".pdf", ".txt", ".doc", ".jpg"]:
+            f = tmp_path / f"file{ext}"
+            f.write_bytes(b"fake")
+            assert _is_processable_file(f) is False
+
+    def test_is_processable_file_rejects_intermediate_files(self, tmp_path):
+        from wx4.cli import _is_processable_file
+
+        intermediate_names = [
+            "audio_enhanced.m4a",
+            "audio_normalized.m4a",
+            "video_compressed.mp4",
+            "audio_timestamps.json",
+        ]
+        for name in intermediate_names:
+            f = tmp_path / name
+            f.write_bytes(b"fake")
+            assert _is_processable_file(f) is False

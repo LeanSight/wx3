@@ -393,6 +393,24 @@ def _make_whisper_transcribe_mock(tmp_path, stem):
 
 
 class TestAcceptanceWhisperBackend:
+    def test_expand_paths_does_not_call_ffprobe(self, tmp_path):
+        """
+        AT: _expand_paths no debe llamar a ffprobe - usa whitelist de extensiones.
+        """
+        from wx4.cli import _expand_paths
+
+        (tmp_path / "video.mp4").write_bytes(b"fake")
+        (tmp_path / "audio.m4a").write_bytes(b"fake")
+        (tmp_path / "audio.mp3").write_bytes(b"fake")
+        (tmp_path / "doc.pdf").write_bytes(b"fake")
+
+        with patch("wx4.cli.ffmpeg.probe") as mock_probe:
+            result = _expand_paths([str(tmp_path)])
+            mock_probe.assert_not_called()
+
+        assert len(result) == 3
+        assert all(p.suffix in {".mp4", ".m4a", ".mp3"} for p in result)
+
     def test_whisper_backend_produces_srt(self, tmp_path):
         """
         AT-1: transcribe_backend='whisper' -> pipeline runs transcribe_with_whisper
@@ -523,6 +541,7 @@ class TestAcceptanceWhisperBackend:
                 "wx4.steps.to_aac",
                 side_effect=lambda s, d, **kw: d.write_bytes(b"aac") or True,
             ),
+            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps

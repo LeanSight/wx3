@@ -95,7 +95,33 @@ def _get_model(
 import ffmpeg
 
 # Extension fallback para archivos de audio/video validos
-_AUDIO_EXTENSIONS = {".mp4", ".mp3", ".m4a", ".wav", ".avi", ".mov", ".flac"}
+_AUDIO_EXTENSIONS = frozenset(
+    {
+        ".mp3",
+        ".m4a",
+        ".wav",
+        ".aac",
+        ".flac",
+        ".opus",
+        ".ogg",
+    }
+)
+
+_VIDEO_EXTENSIONS = frozenset(
+    {
+        ".mp4",
+        ".mkv",
+        ".mov",
+        ".avi",
+        ".wmv",
+        ".webm",
+        ".m4v",
+        ".mpg",
+        ".mpeg",
+    }
+)
+
+_MEDIA_EXTENSIONS = _AUDIO_EXTENSIONS | _VIDEO_EXTENSIONS
 
 
 def _is_intermediate_file(path: Path) -> bool:
@@ -115,15 +141,12 @@ def _has_video_stream(path: Path) -> bool | None:
 
 
 def _is_processable_file(path: Path) -> bool:
-    """Es archivo de audio/video valido? (ffprobe para detectar tipo)."""
+    """Es archivo de audio/video valido? (usa whitelist de extensiones)."""
     if not path.is_file():
         return False
     if _is_intermediate_file(path):
         return False
-    result = _has_video_stream(path)
-    if result is None:
-        return path.suffix.lower() in _AUDIO_EXTENSIONS
-    return True
+    return path.suffix.lower() in _MEDIA_EXTENSIONS
 
 
 def _expand_paths(paths: List[str]) -> List[Path]:
@@ -320,15 +343,7 @@ def main(
 
     hf_token = _get_secret(hf_token, "HF_TOKEN")
 
-    cv = None
-    if not skip_enhance:
-        from clearvoice import ClearVoice
-
-        cv = _get_model(
-            _CV_MODEL,
-            lambda: ClearVoice(task="speech_enhancement", model_names=[_CV_MODEL]),
-            console,
-        )
+    # ClearVoice se carga de forma lazy dentro de enhance_step, no aqui
 
     results = []
     # Progress para step progress
@@ -349,7 +364,7 @@ def main(
             speaker_names=speaker_names,
             force=force,
             compress_ratio=compress if compress is not None else 0.40,
-            cv=cv,
+            cv=None,  # Lazy loaded in enhance_step via _get_model
             transcribe_backend=backend,
             hf_token=hf_token,
             device=device,
