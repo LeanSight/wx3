@@ -2,10 +2,15 @@
 Shared fixtures for wx4 tests.
 """
 
+import warnings
 import wave
 from pathlib import Path
 
 import pytest
+
+
+def pytest_configure(config):
+    config.addinivalue_line("filterwarnings", "ignore:.*ipywidgets.*")
 
 
 @pytest.fixture(autouse=True)

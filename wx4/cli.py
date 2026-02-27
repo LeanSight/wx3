@@ -28,7 +28,7 @@ from wx4.pipeline import Pipeline, build_steps
 from wx4.speakers import parse_speakers_map
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
-console = Console(markup=True, force_terminal=True)
+console = Console(markup=True)
 
 
 def _make_progress(console: Console) -> Progress:
@@ -217,7 +217,7 @@ class RichProgressCallback:
             self._render_tree(),
             console=self._console,
             refresh_per_second=4,
-            transient=False,
+            transient=True,
         )
         self._live.start()
 
@@ -256,6 +256,7 @@ class RichProgressCallback:
             self._live.update(self._render_tree())
             self._live.stop()
             self._live = None
+            self._console.print(self._render_tree())
 
 
 @app.command()

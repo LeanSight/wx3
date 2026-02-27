@@ -328,6 +328,78 @@ class TestAcceptance:
 
         assert result.video_compressed is None
 
+    def test_skipped_steps_populate_ctx_fields(self, tmp_path):
+        """Cuando todos los intermedios existen, ctx tiene srt/transcript_json poblados."""
+        src = tmp_path / "meeting.mp3"
+        src.write_bytes(b"audio")
+        json_path = tmp_path / "meeting_timestamps.json"
+        json_path.write_text("[]", encoding="utf-8")
+        srt_path = tmp_path / "meeting_timestamps.srt"
+        srt_path.write_text("", encoding="utf-8")
+
+        from wx4.context import PipelineConfig, PipelineContext
+        from wx4.pipeline import Pipeline, build_steps
+
+        ctx = PipelineContext(src=src)
+        steps = build_steps(PipelineConfig(skip_enhance=True))
+        pipeline = Pipeline(steps)
+        result = pipeline.run(ctx)
+
+        assert result.srt == srt_path
+        assert result.transcript_json == json_path
+
+    def test_normalize_skipped_when_enhanced_exists_on_disk(self, tmp_path):
+        """Si _enhanced.m4a existe en disco, normalize NO debe correr (ni crear tmp files)."""
+        src = tmp_path / "meeting.mp3"
+        src.write_bytes(b"audio")
+        enhanced = tmp_path / "meeting_enhanced.m4a"
+        enhanced.write_bytes(b"enhanced")
+
+        words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
+        transcribe_mock = _make_transcribe_mock(tmp_path, "meeting_enhanced", words)
+
+        with (
+            patch("wx4.steps.extract_to_wav") as m_ext,
+            patch("wx4.steps.normalize_lufs") as m_norm,
+            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
+            patch("wx4.steps.load_cache", return_value={}),
+        ):
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(src=src)
+            steps = build_steps(PipelineConfig())
+            pipeline = Pipeline(steps)
+            result = pipeline.run(ctx)
+
+        m_ext.assert_not_called()
+        m_norm.assert_not_called()
+        assert result.enhanced == enhanced
+        assert result.srt is not None
+
+    def test_compress_step_skips_audio_only_source(self, tmp_path):
+        """compress_ratio set but source is audio-only -> pipeline completes, video_compressed is None."""
+        src = tmp_path / "meeting.m4a"
+        src.write_bytes(b"audio")
+
+        words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
+        transcribe_mock = _make_transcribe_mock(tmp_path, "meeting", words)
+
+        with (
+            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
+            patch("wx4.steps.probe_video", side_effect=RuntimeError("no video stream")),
+        ):
+            from wx4.context import PipelineConfig, PipelineContext
+            from wx4.pipeline import Pipeline, build_steps
+
+            ctx = PipelineContext(src=src)
+            steps = build_steps(PipelineConfig(skip_enhance=True, compress_ratio=0.4))
+            pipeline = Pipeline(steps)
+            result = pipeline.run(ctx)
+
+        assert result.video_compressed is None
+        assert result.srt is not None
+
     def test_pipeline_without_video_step(self, tmp_path):
         """videooutput=False (default) -> ctx.video_out is None."""
         src = tmp_path / "audio.mp3"

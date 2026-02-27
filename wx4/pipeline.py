@@ -17,12 +17,16 @@ class NamedStep:
     name: str
     fn: Callable[[PipelineContext], PipelineContext]
     output_fn: Optional[Callable[[PipelineContext], Path]] = None
+    ctx_setter: Optional[Callable[[PipelineContext, Path], PipelineContext]] = None
 
     def __call__(self, ctx: PipelineContext) -> PipelineContext:
         return self.fn(ctx)
 
     def output_path(self, ctx: PipelineContext) -> Optional[Path]:
         return self.output_fn(ctx) if self.output_fn else None
+
+    def set_ctx(self, ctx: PipelineContext, out: Path) -> PipelineContext:
+        return self.ctx_setter(ctx, out) if self.ctx_setter else ctx
 
 
 class Pipeline:
@@ -57,6 +61,7 @@ class Pipeline:
                 out = step.output_path(ctx) if isinstance(step, NamedStep) else None
 
                 if out is not None and not ctx.force and out.exists():
+                    ctx = step.set_ctx(ctx, out)
                     for cb in self.callbacks:
                         cb.on_step_skipped(step.name, ctx)
                     continue
@@ -138,20 +143,28 @@ def build_steps(config: PipelineConfig | None = None) -> List[NamedStep]:
 
     steps: List[NamedStep] = []
 
+    import dataclasses as _dc
+
     if not config.skip_enhance:
         steps.append(NamedStep("cache_check", cache_check_step))
         if not config.skip_normalize:
-            steps.append(NamedStep("normalize", normalize_step, _NORMALIZE_OUT))
-        steps.append(NamedStep("enhance", enhance_step, _ENHANCE_OUT))
+            steps.append(NamedStep("normalize", normalize_step, _NORMALIZE_OUT,
+                ctx_setter=lambda ctx, p: _dc.replace(ctx, normalized=p)))
+        steps.append(NamedStep("enhance", enhance_step, _ENHANCE_OUT,
+            ctx_setter=lambda ctx, p: _dc.replace(ctx, enhanced=p)))
         steps.append(NamedStep("cache_save", cache_save_step))
 
-    steps.append(NamedStep("transcribe", transcribe_step, _transcript_json))
-    steps.append(NamedStep("srt", srt_step, _srt_out))
+    steps.append(NamedStep("transcribe", transcribe_step, _transcript_json,
+        ctx_setter=lambda ctx, p: _dc.replace(ctx, transcript_json=p)))
+    steps.append(NamedStep("srt", srt_step, _srt_out,
+        ctx_setter=lambda ctx, p: _dc.replace(ctx, srt=p)))
 
     if config.videooutput:
-        steps.append(NamedStep("video", video_step, _video_out))
+        steps.append(NamedStep("video", video_step, _video_out,
+            ctx_setter=lambda ctx, p: _dc.replace(ctx, video_out=p)))
 
     if config.compress_ratio is not None:
-        steps.append(NamedStep("compress", compress_step, _COMPRESS_OUT))
+        steps.append(NamedStep("compress", compress_step, _COMPRESS_OUT,
+            ctx_setter=lambda ctx, p: _dc.replace(ctx, video_compressed=p)))
 
     return steps

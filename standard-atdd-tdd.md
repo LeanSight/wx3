@@ -63,3 +63,6 @@ Cuando cambias el comportamiento de una funcionalidad (no solo UI):
 - El test debe verificar el nuevo comportamiento, no el anterior
 
 El objetivo es que todos los tests esten siempre en GREEN.
+
+## Seguimeinto de planes basados en slices
+**NUNCA** cambiar el orden de implementacion de los slices presentadi en un plan 

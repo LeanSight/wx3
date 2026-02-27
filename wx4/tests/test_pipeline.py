@@ -257,6 +257,33 @@ class TestPipelineResume:
         Pipeline([step]).run(ctx)
         fn.assert_called_once()
 
+    def test_ctx_setter_called_when_step_skipped(self, tmp_path):
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        out = tmp_path / "result.srt"
+        out.write_text("", encoding="utf-8")
+        setter = MagicMock(side_effect=lambda c, p: dataclasses.replace(c, srt=p))
+        step = NamedStep(
+            name="srt", fn=MagicMock(), output_fn=lambda c: out, ctx_setter=setter
+        )
+        result = Pipeline([step]).run(ctx)
+        setter.assert_called_once_with(result.src and ctx or ctx, out)
+        assert result.srt == out
+
+    def test_ctx_setter_not_called_when_step_runs(self, tmp_path):
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        out = tmp_path / "result.srt"  # does not exist
+        setter = MagicMock()
+        updated_ctx = dataclasses.replace(ctx, srt=Path("/fake.srt"))
+        step = NamedStep(
+            name="srt", fn=MagicMock(return_value=updated_ctx), output_fn=lambda c: out, ctx_setter=setter
+        )
+        Pipeline([step]).run(ctx)
+        setter.assert_not_called()
+
     def test_ctx_not_modified_when_step_skipped(self, tmp_path):
         from wx4.pipeline import NamedStep, Pipeline
 

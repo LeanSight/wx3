@@ -72,6 +72,20 @@ def cache_check_step(ctx: PipelineContext) -> PipelineContext:
                 timings={**ctx.timings, "cache_check": time.time() - t0},
             )
 
+    enhanced_path = ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['enhance']}"
+    if enhanced_path.exists():
+        normalized = (
+            ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['normalize']}"
+        )
+        return dataclasses.replace(
+            ctx,
+            enhanced=enhanced_path,
+            normalized=normalized if normalized.exists() else None,
+            cache_hit=True,
+            cache=cache,
+            timings={**ctx.timings, "cache_check": time.time() - t0},
+        )
+
     return dataclasses.replace(
         ctx,
         cache_hit=False,
@@ -98,9 +112,9 @@ def normalize_step(ctx: PipelineContext) -> PipelineContext:
     ext = "m4a" if ctx.output_m4a else "wav"
     out = d / f"{stem}{INTERMEDIATE_BY_STEP['normalize']}"
 
-    if out.exists():
+    if ctx.cache_hit or out.exists():
         return dataclasses.replace(
-            ctx, normalized=out, timings={**ctx.timings, "normalize": time.time() - t0}
+            ctx, normalized=out if out.exists() else ctx.normalized, timings={**ctx.timings, "normalize": time.time() - t0}
         )
 
     tmp_raw = d / f"{stem}._tmp_raw.wav"
@@ -358,10 +372,10 @@ def compress_step(ctx: PipelineContext) -> PipelineContext:
 
     try:
         info = probe_video(src)
-    except RuntimeError as exc:
-        raise RuntimeError(
-            f"compress_step: {src.name} is not a video file or probe failed: {exc}"
-        ) from exc
+    except RuntimeError:
+        return dataclasses.replace(
+            ctx, timings={**ctx.timings, "compress": time.time() - t0}
+        )
 
     if ctx.step_progress:
         ctx.step_progress(0, 100)

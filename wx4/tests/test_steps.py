@@ -211,7 +211,46 @@ class TestEnhanceStep:
 # ---------------------------------------------------------------------------
 
 
+class TestCacheCheckStepDiskFallback:
+    def test_detects_enhanced_on_disk_without_cache_entry(self, tmp_path):
+        src = tmp_path / "audio.mp3"
+        src.write_bytes(b"fake audio")
+        enhanced = tmp_path / "audio_enhanced.m4a"
+        enhanced.write_bytes(b"enhanced")
+
+        with patch("wx4.steps.load_cache", return_value={}):
+            from wx4.steps import cache_check_step
+
+            result = cache_check_step(PipelineContext(src=src))
+
+        assert result.cache_hit is True
+        assert result.enhanced == enhanced
+
+    def test_no_hit_when_enhanced_missing_from_disk_and_cache(self, tmp_path):
+        src = tmp_path / "audio.mp3"
+        src.write_bytes(b"fake audio")
+
+        with patch("wx4.steps.load_cache", return_value={}):
+            from wx4.steps import cache_check_step
+
+            result = cache_check_step(PipelineContext(src=src))
+
+        assert result.cache_hit is False
+        assert result.enhanced is None
+
+
 class TestNormalizeStep:
+    def test_skips_when_cache_hit(self, tmp_path):
+        ctx = _ctx(tmp_path, cache_hit=True)
+
+        with patch("wx4.steps.extract_to_wav") as m_ext:
+            from wx4.steps import normalize_step
+
+            result = normalize_step(ctx)
+
+        m_ext.assert_not_called()
+        assert "normalize" in result.timings
+
     def test_calls_extract_normalize_encode(self, tmp_path):
         ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
 
@@ -661,14 +700,25 @@ class TestCompressStep:
 
         patches["probe_video"].assert_called_once_with(ctx.src)
 
-    def test_raises_clearly_when_probe_fails(self, tmp_path):
+    def test_skips_silently_when_source_has_no_video_stream(self, tmp_path):
         ctx = _ctx(tmp_path)
 
-        with patch("wx4.steps.probe_video", side_effect=RuntimeError("not a video")):
+        with patch("wx4.steps.probe_video", side_effect=RuntimeError("no video stream")):
             from wx4.steps import compress_step
 
-            with pytest.raises(RuntimeError, match="compress_step"):
-                compress_step(ctx)
+            result = compress_step(ctx)
+
+        assert result.video_compressed is None
+
+    def test_timing_recorded_on_audio_only_skip(self, tmp_path):
+        ctx = _ctx(tmp_path)
+
+        with patch("wx4.steps.probe_video", side_effect=RuntimeError("no video stream")):
+            from wx4.steps import compress_step
+
+            result = compress_step(ctx)
+
+        assert "compress" in result.timings
 
     def test_measures_lufs_when_has_audio(self, tmp_path):
         ctx = _ctx(tmp_path)

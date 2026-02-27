@@ -1,3 +1,8 @@
+# Coding Standards
+- STRICTORLY NO COMMENTS: Never add comments to code unless explicitly requested.
+- Use self-documenting code with descriptive variable and function names.
+
+
 **Never use non-ASCII characters in any Python code that produces output.** The Windows console (cp1252) crashes on any non-ASCII in `print()`, `logging`, argparse help/description/epilog, f-strings, or docstrings that flow to stdout/stderr. This means no arrows (`->` is fine, `->` unicode arrow is not), no accented characters, no box-drawing characters, no smart quotes. Use only plain ASCII (0-127) in all text that could be printed.
 
 ## Environment

@@ -738,8 +738,10 @@ class TestCliHierarchicalView:
         ctx = PipelineContext(src=src)
 
         cb.on_pipeline_start(["normalize", "enhance", "transcribe"], ctx)
-
-        assert cb._current_file == src
+        try:
+            assert cb._current_file == src
+        finally:
+            cb._live.stop()
 
     def test_on_step_start_adds_progress_task(self):
         """on_step_start should show the step name in progress."""
