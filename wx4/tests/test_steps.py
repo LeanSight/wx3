@@ -325,6 +325,71 @@ class TestNormalizeStep:
 
 
 # ---------------------------------------------------------------------------
+# TestNormalizeLufsProgress
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeLufsProgress:
+    def test_normalize_lufs_accepts_progress_callback_parameter(self, tmp_path):
+        """normalize_lufs should accept progress_callback parameter without error."""
+        from wx4.audio_normalize import normalize_lufs
+        from unittest.mock import patch, MagicMock
+
+        src = tmp_path / "in.wav"
+        src.write_bytes(b"fake")
+        dst = tmp_path / "out.wav"
+
+        mock_ffmpeg = MagicMock()
+        mock_ffmpeg.Error = type("Error", (Exception,), {})
+        mock_ffmpeg.probe.return_value = {"streams": [{"duration": "10.0"}]}
+
+        stdout_mock = MagicMock()
+        stdout_mock.readline.side_effect = [b"progress=end\n", b""]
+        mock_process = MagicMock()
+        mock_process.stdout = stdout_mock
+        mock_process.wait.return_value = 0
+        mock_ffmpeg.input.return_value.output.return_value.global_args.return_value.overwrite_output.return_value.run_async.return_value = mock_process
+
+        mock_ffmpeg.input.return_value.output.return_value.run.return_value = (
+            b"",
+            b'"input_i": "-70.0"',
+        )
+
+        with patch("wx4.audio_normalize.ffmpeg", mock_ffmpeg):
+            result = normalize_lufs(src, dst, progress_callback=lambda d, t: None)
+
+        assert result is True
+
+    def test_normalize_lufs_callback_none_does_not_crash(self, tmp_path):
+        """normalize_lufs with progress_callback=None should not crash."""
+        from wx4.audio_normalize import normalize_lufs
+        from unittest.mock import patch, MagicMock
+
+        src = tmp_path / "in.wav"
+        src.write_bytes(b"fake")
+        dst = tmp_path / "out.wav"
+
+        mock_ffmpeg = MagicMock()
+        mock_ffmpeg.Error = type("Error", (Exception,), {})
+        mock_ffmpeg.probe.return_value = {"streams": [{"duration": "10.0"}]}
+
+        stdout_mock = MagicMock()
+        stdout_mock.readline.side_effect = [b"progress=end\n", b""]
+        mock_process = MagicMock()
+        mock_process.stdout = stdout_mock
+        mock_process.wait.return_value = 0
+        mock_ffmpeg.input.return_value.output.return_value.global_args.return_value.overwrite_output.return_value.run_async.return_value = mock_process
+
+        mock_ffmpeg.input.return_value.output.return_value.run.return_value = (
+            b"",
+            b'"input_i": "-70.0"',
+        )
+
+        with patch("wx4.audio_normalize.ffmpeg", mock_ffmpeg):
+            normalize_lufs(src, dst, progress_callback=None)
+
+
+# ---------------------------------------------------------------------------
 # TestEnhanceStepAtomicity
 # ---------------------------------------------------------------------------
 
@@ -703,7 +768,9 @@ class TestCompressStep:
     def test_skips_silently_when_source_has_no_video_stream(self, tmp_path):
         ctx = _ctx(tmp_path)
 
-        with patch("wx4.steps.probe_video", side_effect=RuntimeError("no video stream")):
+        with patch(
+            "wx4.steps.probe_video", side_effect=RuntimeError("no video stream")
+        ):
             from wx4.steps import compress_step
 
             result = compress_step(ctx)
@@ -713,7 +780,9 @@ class TestCompressStep:
     def test_timing_recorded_on_audio_only_skip(self, tmp_path):
         ctx = _ctx(tmp_path)
 
-        with patch("wx4.steps.probe_video", side_effect=RuntimeError("no video stream")):
+        with patch(
+            "wx4.steps.probe_video", side_effect=RuntimeError("no video stream")
+        ):
             from wx4.steps import compress_step
 
             result = compress_step(ctx)

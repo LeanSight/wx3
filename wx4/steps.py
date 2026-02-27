@@ -114,7 +114,9 @@ def normalize_step(ctx: PipelineContext) -> PipelineContext:
 
     if ctx.cache_hit or out.exists():
         return dataclasses.replace(
-            ctx, normalized=out if out.exists() else ctx.normalized, timings={**ctx.timings, "normalize": time.time() - t0}
+            ctx,
+            normalized=out if out.exists() else ctx.normalized,
+            timings={**ctx.timings, "normalize": time.time() - t0},
         )
 
     tmp_raw = d / f"{stem}._tmp_raw.wav"
@@ -124,7 +126,7 @@ def normalize_step(ctx: PipelineContext) -> PipelineContext:
         if not extract_to_wav(ctx.src, tmp_raw):
             raise RuntimeError(f"extract_to_wav failed for {ctx.src.name}")
 
-        normalize_lufs(tmp_raw, tmp_norm)
+        normalize_lufs(tmp_raw, tmp_norm, progress_callback=ctx.step_progress)
 
         if ctx.output_m4a:
             tmp_out = out.with_suffix(".m4a.tmp")
