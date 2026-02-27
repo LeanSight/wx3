@@ -147,6 +147,7 @@ class TestEnhanceStep:
 
     def test_calls_only_clearvoice_and_encode_on_miss(self, tmp_path):
         ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True, cv=MagicMock())
+        mock_cv = MagicMock()
 
         def fake_to_aac(src, dst, **kw):
             dst.write_bytes(b"aac")
@@ -157,6 +158,7 @@ class TestEnhanceStep:
             patch("wx4.steps.to_aac", side_effect=fake_to_aac),
             patch("wx4.steps.extract_to_wav") as m_ext,
             patch("wx4.steps.normalize_lufs") as m_norm,
+            patch("wx4.steps._load_clearvoice", return_value=mock_cv),
         ):
             from wx4.steps import enhance_step
 
@@ -170,7 +172,10 @@ class TestEnhanceStep:
     def test_raises_when_extract_fails(self, tmp_path):
         ctx = _ctx(tmp_path, cache_hit=False, cv=MagicMock())
 
-        with patch("wx4.steps.extract_to_wav", return_value=False):
+        with (
+            patch("wx4.steps.extract_to_wav", return_value=False),
+            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
+        ):
             from wx4.steps import enhance_step
 
             with pytest.raises(RuntimeError):
@@ -184,6 +189,7 @@ class TestEnhanceStep:
             patch("wx4.steps.normalize_lufs"),
             patch("wx4.steps.apply_clearvoice"),
             patch("wx4.steps.to_aac", return_value=False),
+            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -299,6 +305,7 @@ class TestEnhanceStepAtomicity:
             patch("wx4.steps.normalize_lufs"),
             patch("wx4.steps.apply_clearvoice"),
             patch("wx4.steps.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -333,6 +340,7 @@ class TestEnhanceStepAtomicity:
             patch("wx4.steps.normalize_lufs", side_effect=fake_normalize),
             patch("wx4.steps.apply_clearvoice", side_effect=fake_enhance),
             patch("wx4.steps.to_aac", return_value=False),
+            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -353,6 +361,7 @@ class TestEnhanceStepAtomicity:
             patch("wx4.steps.normalize_lufs"),
             patch("wx4.steps.apply_clearvoice"),
             patch("wx4.steps.to_aac", return_value=False),
+            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -789,6 +798,7 @@ class TestEnhanceStepPassesStepProgress:
             patch("wx4.steps.normalize_lufs"),
             patch("wx4.steps.apply_clearvoice") as m_enh,
             patch("wx4.steps.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -808,6 +818,7 @@ class TestEnhanceStepPassesStepProgress:
             patch("wx4.steps.normalize_lufs"),
             patch("wx4.steps.apply_clearvoice") as m_enh,
             patch("wx4.steps.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 

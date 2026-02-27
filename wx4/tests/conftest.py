@@ -8,6 +8,16 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def clear_model_cache():
+    """Clear model cache between each test for isolation."""
+    from wx4.model_cache import _clear_model_cache
+
+    _clear_model_cache()
+    yield
+    _clear_model_cache()
+
+
 @pytest.fixture
 def tmp_audio_wav(tmp_path) -> Path:
     """WAV 48kHz mono silence, created with stdlib wave (no ffmpeg)."""
