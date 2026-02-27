@@ -27,8 +27,6 @@ from wx4.context import PipelineConfig, PipelineContext
 from wx4.pipeline import Pipeline, build_steps
 from wx4.speakers import parse_speakers_map
 
-_CV_MODEL = "MossFormer2_SE_48K"
-
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console(markup=True, force_terminal=True)
 

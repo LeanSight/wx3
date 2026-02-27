@@ -416,6 +416,16 @@ class TestAcceptanceWhisperBackend:
         ctx = PipelineContext(src=src)
         assert not hasattr(ctx, "cv")
 
+    def test_cv_model_defined_in_steps_not_cli(self):
+        """
+        AT: _CV_MODEL debe estar en steps.py, no en cli.py.
+        """
+        import wx4.steps as steps
+        import wx4.cli as cli
+
+        assert hasattr(steps, "_CV_MODEL"), "_CV_MODEL should be in steps.py"
+        assert not hasattr(cli, "_CV_MODEL"), "_CV_MODEL should NOT be in cli.py"
+
     def test_tmp_raw_tmp_norm_are_intermediate_files(self, tmp_path):
         """
         AT: Archivos con sufijos _tmp_raw y _tmp_norm deben ser ignorados.

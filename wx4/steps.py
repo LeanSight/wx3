@@ -29,6 +29,8 @@ from wx4.model_cache import _get_model
 from wx4.transcribe_aai import transcribe_assemblyai
 from wx4.video_black import audio_to_black_video
 
+_CV_MODEL = "MossFormer2_SE_48K"
+
 
 # ---------------------------------------------------------------------------
 # cache_check_step
@@ -138,9 +140,9 @@ def _load_clearvoice() -> object:
     Load ClearVoice model (MossFormer2) on demand.
     This function is called lazily via _get_model.
     """
-    from clearvoice import MossFormer2
+    from clearvoice import ClearVoice
 
-    return MossFormer2()
+    return ClearVoice(task="speech_enhancement", model_names=[_CV_MODEL])
 
 
 def enhance_step(ctx: PipelineContext) -> PipelineContext:
