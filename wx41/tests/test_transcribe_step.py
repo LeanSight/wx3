@@ -2,8 +2,6 @@ from pathlib import Path
 
 import pytest
 
-from wx41.context import PipelineConfig, PipelineContext
-from wx41.pipeline import MediaOrchestrator
 from wx41.steps.transcribe import transcribe_step
 from wx41.tests.conftest import make_ctx
 
@@ -19,19 +17,22 @@ def _fake_files(tmp_path: Path, stem: str):
 class TestTranscribeStepWalkingSkeleton:
     def test_assemblyai_happy_path(self, tmp_path, monkeypatch):
         ctx = make_ctx(tmp_path)
-        txt, jsn = _fake_files(tmp_path, "audio")
+        txt = tmp_path / "audio_transcript.txt"
+        jsn = tmp_path / "audio_timestamps.json"
 
-        monkeypatch.setattr(
-            "wx41.steps.transcribe.transcribe_assemblyai",
-            lambda *a, **kw: (txt, jsn),
-        )
+        def fake(*a, **kw):
+            txt.write_text("hello", encoding="utf-8")
+            jsn.write_text("[]", encoding="utf-8")
+            return txt, jsn
+
+        monkeypatch.setattr("wx41.steps.transcribe.transcribe_assemblyai", fake)
 
         result = transcribe_step(ctx)
 
         assert result.transcript_txt == txt, f"transcript_txt incorrecto: {result.transcript_txt}"
         assert result.transcript_json == jsn, f"transcript_json incorrecto: {result.transcript_json}"
-        assert result.transcript_txt.exists(), f"archivo no existe: {result.transcript_txt}"
-        assert result.transcript_json.exists(), f"archivo no existe: {result.transcript_json}"
+        assert result.transcript_txt.exists(), f"archivo no creado: {result.transcript_txt}"
+        assert result.transcript_json.exists(), f"archivo no creado: {result.transcript_json}"
 
 
 class TestTranscribeStepUsesEnhanced:
@@ -86,28 +87,3 @@ class TestTranscribeStepTiming:
         assert result.timings["transcribe"] >= 0, f"timing invalido: {result.timings['transcribe']}"
 
 
-class TestPipelineWalkingSkeleton:
-    def test_produces_transcript_files(self, tmp_path, monkeypatch):
-        src = tmp_path / "audio.m4a"
-        src.touch()
-        txt = tmp_path / "audio_transcript.txt"
-        jsn = tmp_path / "audio_timestamps.json"
-
-        def fake_transcribe(*a, **kw):
-            txt.write_text("hello", encoding="utf-8")
-            jsn.write_text("[]", encoding="utf-8")
-            return txt, jsn
-
-        monkeypatch.setattr(
-            "wx41.steps.transcribe.transcribe_assemblyai",
-            fake_transcribe,
-        )
-
-        config = PipelineConfig()
-        orchestrator = MediaOrchestrator(config, [])
-        ctx = orchestrator.run(src)
-
-        assert ctx.transcript_txt is not None, "transcript_txt no seteado en ctx"
-        assert ctx.transcript_json is not None, "transcript_json no seteado en ctx"
-        assert ctx.transcript_txt.exists(), f"archivo no creado: {ctx.transcript_txt}"
-        assert ctx.transcript_json.exists(), f"archivo no creado: {ctx.transcript_json}"

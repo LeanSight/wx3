@@ -11,11 +11,11 @@ Los cinco objetivos que wx41 debe cumplir, y donde los implementa:
 
 | Objetivo | Componente | Seccion del plan |
 |----------|------------|-----------------|
-| **Encadenado de steps** | `Pipeline.run()` ejecuta `NamedStep` en orden; cada step recibe y retorna `PipelineContext` inmutable | Fase 2: Pipeline.run() |
-| **Activacion/desactivacion declarativa** | `PipelineConfig` (flags inmutables); `_step(skip_fn=...)` en `build_audio_pipeline` / `build_video_pipeline`; pasar `skip_fn` en construccion, no dentro del step | Fase 2: _step factory y build_*_pipeline |
-| **Visualizacion en UI** | `PipelineObserver` (Protocol): `on_step_start/end/skipped/progress`; `RichPipelineObserver` implementa con Rich Progress, spinner y barra por step | Fase 2: PipelineObserver + RichPipelineObserver |
-| **Resumability** | `PipelineState` serializa steps completados en `{stem}.wx41.json`; `Pipeline.run()` comprueba `was_done()` y restaura `ctx` con `ctx_setter` antes de saltar | Fase 2: Pipeline.run() con PipelineState |
-| **Dry run** | `Pipeline.dry_run()` retorna `list[StepDecision]` sin ejecutar ningun step; `_detect_intermediate_files` puebla `ctx` desde disco de forma pura | Fase 2: Pipeline.dry_run() puro |
+| **Encadenado de steps** | `Pipeline.run()` ejecuta `NamedStep` en orden; cada step recibe y retorna `PipelineContext` inmutable | S1: Pipeline.run() minimo; S3-S4: steps cableados |
+| **Activacion/desactivacion declarativa** | `PipelineConfig` (flags inmutables); `_step(skip_fn=...)` en `build_audio_pipeline` / `build_video_pipeline`; pasar `skip_fn` en construccion, no dentro del step | S3: skip_fn en normalize + enhance |
+| **Visualizacion en UI** | `PipelineObserver` (Protocol): `on_step_start/end/skipped/progress`; `RichPipelineObserver` implementa con Rich Progress, spinner y barra por step | S1: PipelineObserver base; cli.py: RichPipelineObserver |
+| **Resumability** | `PipelineState` serializa steps completados en `{stem}.wx41.json`; `Pipeline.run()` comprueba `was_done()` y restaura `ctx` con `ctx_setter` antes de saltar | S5: Pipeline.run() con PipelineState |
+| **Dry run** | `Pipeline.dry_run()` retorna `list[StepDecision]` sin ejecutar ningun step; `_detect_intermediate_files` puebla `ctx` desde disco de forma pura | S8: Pipeline.dry_run() puro |
 
 ---
 
@@ -219,20 +219,23 @@ No agrega AT de pipeline nueva. Los steps se implementan pero NO se cablear
 al pipeline (excepto transcribe, ya cableado en S1).
 Nota: los slices de transcribe_step en esta seccion amplian los 3 del S1.
 
-Metodologia por slice:
+Protocolo obligatorio por slice:
 ```
 Slice 1 - Walking Skeleton del step:
-  RED   -> escribir AT, falla porque el step no existe
-  DIAG  -> mejorar assert msgs con f-strings
-  GREEN -> implementar step + Nullables via monkeypatch
-  REFACTOR -> si hay duplicacion
-  COMMIT + PUSH
+  1. Escribir test (CERO produccion nueva)
+     pytest wx41/tests/test_<step>.py -k "<nombre>" -> DEBE salir RED
+     Si sale GREEN: el test no verifica nada nuevo, reescribir
+  2. Mejorar mensaje de fallo con f-strings
+  3. Escribir produccion minima -> pytest -> GREEN
+  4. Refactor si hay duplicacion (tests siguen GREEN)
+  5. COMMIT + PUSH
 
 Slice 2+ - Errores y borde:
-  RED   -> escribir test de error especifico
-  DIAG  -> pytest.raises(RuntimeError, match="texto exacto")
-  GREEN -> implementar rama de error
-  COMMIT + PUSH
+  1. Escribir test de error especifico (CERO produccion)
+     pytest wx41/tests/test_<step>.py -k "<nombre>" -> DEBE salir RED
+  2. Mejorar msg: pytest.raises(RuntimeError, match="texto exacto")
+  3. Implementar rama de error -> pytest -> GREEN
+  4. COMMIT + PUSH
 ```
 
 ---
@@ -566,7 +569,7 @@ Al completar S8: pipeline funcional end-to-end para audio y video.
 
 ## Diseno de pipeline.py y cli.py (de wx41.md)
 
-Esta seccion contiene los patrones de implementacion concretos para Fase 2.
+Esta seccion contiene los patrones de implementacion concretos para S1-S8.
 
 ### PipelineState (step_common.py)
 

@@ -105,7 +105,18 @@ def _step(name: str, fn: Callable, ctx_field: str, skip_fn: Optional[Callable] =
     )
 
 
-_TRANSCRIBE = _step("transcribe", transcribe_step, "transcript_json")
+def _transcribe_ctx_setter(ctx: PipelineContext, json_path: Path) -> PipelineContext:
+    txt_path = json_path.parent / json_path.name.replace("_timestamps.json", "_transcript.txt")
+    return dataclasses.replace(ctx, transcript_json=json_path, transcript_txt=txt_path)
+
+
+_TRANSCRIBE = NamedStep(
+    name="transcribe",
+    fn=transcribe_step,
+    output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['transcribe']}",
+    skip_fn=None,
+    ctx_setter=_transcribe_ctx_setter,
+)
 
 
 def build_audio_pipeline(config: PipelineConfig, observers: List[PipelineObserver]) -> Pipeline:
@@ -120,7 +131,7 @@ class MediaOrchestrator:
     def run(self, src: Path) -> PipelineContext:
         ctx = PipelineContext(
             src=src,
-            force=self._config.compress_ratio is not None,
+            force=self._config.force,
             compress_ratio=self._config.compress_ratio,
         )
         pipeline = build_audio_pipeline(self._config, self._observers)

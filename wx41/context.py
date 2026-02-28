@@ -8,6 +8,7 @@ class PipelineConfig:
     skip_enhance: bool = False
     skip_normalize: bool = False
     compress_ratio: Optional[float] = None
+    force: bool = False
 
 
 @dataclass
