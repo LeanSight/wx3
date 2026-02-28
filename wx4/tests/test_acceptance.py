@@ -43,14 +43,17 @@ class TestAcceptance:
         transcribe_mock = _make_transcribe_mock(tmp_path, "meeting_enhanced", words)
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs", return_value=True),
-            patch("wx4.steps.apply_clearvoice", return_value=True),
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize.normalize_lufs", return_value=True),
+            patch("wx4.steps.enhance.apply_clearvoice", return_value=True),
             patch(
-                "wx4.steps.to_aac",
+                "wx4.steps.normalize.to_aac",
                 side_effect=lambda s, d, **kw: d.write_bytes(b"aac") or True,
             ),
-            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
+            patch(
+                "wx4.steps.transcribe.transcribe_assemblyai",
+                side_effect=transcribe_mock,
+            ),
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -77,7 +80,7 @@ class TestAcceptance:
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
         with patch(
-            "wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock
+            "wx4.steps.transcribe.transcribe_assemblyai", side_effect=transcribe_mock
         ) as mock_transcribe:
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -108,9 +111,12 @@ class TestAcceptance:
         cache_data = {file_key(src): {"output": enhanced_path.name}}
 
         with (
-            patch("wx4.steps.apply_clearvoice") as mock_cv,
-            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
-            patch("wx4.steps.load_cache", return_value=cache_data),
+            patch("wx4.steps.enhance.apply_clearvoice") as mock_cv,
+            patch(
+                "wx4.steps.transcribe.transcribe_assemblyai",
+                side_effect=transcribe_mock,
+            ),
+            patch("wx4.steps.cache_check.load_cache", return_value=cache_data),
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -135,7 +141,9 @@ class TestAcceptance:
         ]
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
-        with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock):
+        with patch(
+            "wx4.steps.transcribe.transcribe_assemblyai", side_effect=transcribe_mock
+        ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
@@ -162,8 +170,11 @@ class TestAcceptance:
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
         with (
-            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
-            patch("wx4.steps.audio_to_black_video", return_value=True),
+            patch(
+                "wx4.steps.transcribe.transcribe_assemblyai",
+                side_effect=transcribe_mock,
+            ),
+            patch("wx4.steps.video.audio_to_black_video", return_value=True),
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -187,8 +198,11 @@ class TestAcceptance:
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio_normalized", words)
 
         with (
-            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
-            patch("wx4.steps.audio_to_black_video") as m_video,
+            patch(
+                "wx4.steps.transcribe.transcribe_assemblyai",
+                side_effect=transcribe_mock,
+            ),
+            patch("wx4.steps.video.audio_to_black_video") as m_video,
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -216,13 +230,13 @@ class TestAcceptance:
         compressed_path.write_bytes(b"video")
 
         with (
-            patch("wx4.steps.audio_to_black_video", return_value=True) as m_video,
-            patch("wx4.steps._compress_video", return_value=None),
-            patch("wx4.steps.probe_video", return_value=mock_info),
-            patch("wx4.steps.measure_audio_lufs", return_value=-20.0),
-            patch("wx4.steps.LufsInfo") as mock_lufs,
-            patch("wx4.steps.detect_best_encoder", return_value=MagicMock()),
-            patch("wx4.steps.calculate_video_bitrate") as m_bitrate,
+            patch("wx4.steps.video.audio_to_black_video", return_value=True) as m_video,
+            patch("wx4.steps.video._compress_video", return_value=None),
+            patch("wx4.steps.video.probe_video", return_value=mock_info),
+            patch("wx4.steps.video.measure_audio_lufs", return_value=-20.0),
+            patch("wx4.steps.video.LufsInfo") as mock_lufs,
+            patch("wx4.steps.video.detect_best_encoder", return_value=MagicMock()),
+            patch("wx4.steps.video.calculate_video_bitrate") as m_bitrate,
         ):
             mock_lufs.from_measured.return_value = MagicMock()
             mock_lufs.noop.return_value = MagicMock()
@@ -261,12 +275,12 @@ class TestAcceptance:
         mock_lufs_cls.noop.return_value = MagicMock()
 
         with (
-            patch("wx4.steps.measure_audio_lufs") as m_lufs,
-            patch("wx4.steps.probe_video", return_value=mock_info),
-            patch("wx4.steps.LufsInfo", mock_lufs_cls),
-            patch("wx4.steps.detect_best_encoder", return_value=MagicMock()),
-            patch("wx4.steps.calculate_video_bitrate", return_value=500_000),
-            patch("wx4.steps._compress_video"),
+            patch("wx4.steps.compress.measure_audio_lufs") as m_lufs,
+            patch("wx4.steps.compress.probe_video", return_value=mock_info),
+            patch("wx4.steps.compress.LufsInfo", mock_lufs_cls),
+            patch("wx4.steps.compress.detect_best_encoder", return_value=MagicMock()),
+            patch("wx4.steps.compress.calculate_video_bitrate", return_value=500_000),
+            patch("wx4.steps.compress._compress_video"),
         ):
             from wx4.context import PipelineContext
             from wx4.steps import compress_step
@@ -290,13 +304,16 @@ class TestAcceptance:
         mock_lufs_cls.from_measured.return_value = MagicMock()
 
         with (
-            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
-            patch("wx4.steps.probe_video", return_value=mock_info),
-            patch("wx4.steps.measure_audio_lufs", return_value=-20.0),
-            patch("wx4.steps.LufsInfo", mock_lufs_cls),
-            patch("wx4.steps.detect_best_encoder", return_value=MagicMock()),
-            patch("wx4.steps.calculate_video_bitrate", return_value=500_000),
-            patch("wx4.steps._compress_video"),
+            patch(
+                "wx4.steps.transcribe.transcribe_assemblyai",
+                side_effect=transcribe_mock,
+            ),
+            patch("wx4.steps.compress.probe_video", return_value=mock_info),
+            patch("wx4.steps.compress.measure_audio_lufs", return_value=-20.0),
+            patch("wx4.steps.compress.LufsInfo", mock_lufs_cls),
+            patch("wx4.steps.compress.detect_best_encoder", return_value=MagicMock()),
+            patch("wx4.steps.compress.calculate_video_bitrate", return_value=500_000),
+            patch("wx4.steps.compress._compress_video"),
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -317,7 +334,9 @@ class TestAcceptance:
         words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
-        with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock):
+        with patch(
+            "wx4.steps.transcribe.transcribe_assemblyai", side_effect=transcribe_mock
+        ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
@@ -359,10 +378,13 @@ class TestAcceptance:
         transcribe_mock = _make_transcribe_mock(tmp_path, "meeting_enhanced", words)
 
         with (
-            patch("wx4.steps.extract_to_wav") as m_ext,
-            patch("wx4.steps.normalize_lufs") as m_norm,
-            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
-            patch("wx4.steps.load_cache", return_value={}),
+            patch("wx4.steps.normalize.extract_to_wav") as m_ext,
+            patch("wx4.steps.normalize.normalize_lufs") as m_norm,
+            patch(
+                "wx4.steps.transcribe.transcribe_assemblyai",
+                side_effect=transcribe_mock,
+            ),
+            patch("wx4.steps.cache_check.load_cache", return_value={}),
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -386,8 +408,14 @@ class TestAcceptance:
         transcribe_mock = _make_transcribe_mock(tmp_path, "meeting", words)
 
         with (
-            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
-            patch("wx4.steps.probe_video", side_effect=RuntimeError("no video stream")),
+            patch(
+                "wx4.steps.transcribe.transcribe_assemblyai",
+                side_effect=transcribe_mock,
+            ),
+            patch(
+                "wx4.steps.compress.probe_video",
+                side_effect=RuntimeError("no video stream"),
+            ),
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -408,7 +436,9 @@ class TestAcceptance:
         words = [{"text": "hi.", "start": 0, "end": 500, "speaker": "A"}]
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio", words)
 
-        with patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock):
+        with patch(
+            "wx4.steps.transcribe.transcribe_assemblyai", side_effect=transcribe_mock
+        ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
@@ -492,10 +522,10 @@ class TestAcceptanceWhisperBackend:
         """
         AT: _CV_MODEL debe estar en steps.py, no en cli.py.
         """
-        import wx4.steps as steps
+        from wx4.steps import enhance
         import wx4.cli as cli
 
-        assert hasattr(steps, "_CV_MODEL"), "_CV_MODEL should be in steps.py"
+        assert hasattr(enhance, "_CV_MODEL"), "_CV_MODEL should be in steps/enhance.py"
         assert not hasattr(cli, "_CV_MODEL"), "_CV_MODEL should NOT be in cli.py"
 
     def test_tmp_raw_tmp_norm_are_intermediate_files(self, tmp_path):
@@ -543,7 +573,9 @@ class TestAcceptanceWhisperBackend:
         src.write_bytes(b"fake audio")
         transcribe_mock = _make_whisper_transcribe_mock(tmp_path, "meeting")
 
-        with patch("wx4.steps.transcribe_with_whisper", side_effect=transcribe_mock):
+        with patch(
+            "wx4.steps.transcribe.transcribe_with_whisper", side_effect=transcribe_mock
+        ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
 
@@ -573,9 +605,10 @@ class TestAcceptanceWhisperBackend:
 
         with (
             patch(
-                "wx4.steps.transcribe_with_whisper", side_effect=transcribe_mock
+                "wx4.steps.transcribe.transcribe_with_whisper",
+                side_effect=transcribe_mock,
             ) as mock_wh,
-            patch("wx4.steps.transcribe_assemblyai") as mock_aai,
+            patch("wx4.steps.transcribe.transcribe_assemblyai") as mock_aai,
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -601,9 +634,10 @@ class TestAcceptanceWhisperBackend:
 
         with (
             patch(
-                "wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock
+                "wx4.steps.transcribe.transcribe_assemblyai",
+                side_effect=transcribe_mock,
             ) as mock_aai,
-            patch("wx4.steps.transcribe_with_whisper") as mock_wh,
+            patch("wx4.steps.transcribe.transcribe_with_whisper") as mock_wh,
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -625,7 +659,7 @@ class TestAcceptanceWhisperBackend:
         transcribe_mock = _make_whisper_transcribe_mock(tmp_path, "meeting")
 
         with patch(
-            "wx4.steps.transcribe_with_whisper", side_effect=transcribe_mock
+            "wx4.steps.transcribe.transcribe_with_whisper", side_effect=transcribe_mock
         ) as mock_wh:
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -656,15 +690,22 @@ class TestAcceptanceWhisperBackend:
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio_enhanced", words)
 
         with (
-            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
-            patch("wx4.steps.apply_clearvoice") as m_cv,
-            patch("wx4.steps.normalize_lufs") as m_norm,
-            patch("wx4.steps.extract_to_wav") as m_ext,
             patch(
-                "wx4.steps.to_aac",
+                "wx4.steps.transcribe.transcribe_assemblyai",
+                side_effect=transcribe_mock,
+            ),
+            patch("wx4.steps.enhance.apply_clearvoice") as m_cv,
+            patch("wx4.steps.normalize.normalize_lufs") as m_norm,
+            patch("wx4.steps.normalize.extract_to_wav") as m_ext,
+            patch(
+                "wx4.steps.normalize.to_aac",
                 side_effect=lambda s, d, **kw: d.write_bytes(b"aac") or True,
             ),
-            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
+            patch(
+                "wx4.steps.enhance.to_aac",
+                side_effect=lambda s, d, **kw: d.write_bytes(b"aac") or True,
+            ),
+            patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.context import PipelineConfig, PipelineContext
             from wx4.pipeline import Pipeline, build_steps
@@ -686,12 +727,15 @@ class TestAcceptanceWhisperBackend:
         transcribe_mock = _make_transcribe_mock(tmp_path, "audio_normalized", words)
 
         with (
-            patch("wx4.steps.transcribe_assemblyai", side_effect=transcribe_mock),
-            patch("wx4.steps.apply_clearvoice") as m_cv,
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs"),
             patch(
-                "wx4.steps.to_aac",
+                "wx4.steps.transcribe.transcribe_assemblyai",
+                side_effect=transcribe_mock,
+            ),
+            patch("wx4.steps.enhance.apply_clearvoice") as m_cv,
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize.normalize_lufs"),
+            patch(
+                "wx4.steps.normalize.to_aac",
                 side_effect=lambda s, d, **kw: d.write_bytes(b"aac") or True,
             ),
         ):
@@ -746,9 +790,11 @@ class TestNormalizeProgress:
         )
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs", side_effect=fake_normalize_lufs),
-            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch(
+                "wx4.steps.normalize.normalize_lufs", side_effect=fake_normalize_lufs
+            ),
+            patch("wx4.steps.normalize.to_aac", side_effect=fake_to_aac),
         ):
             normalize_step(ctx)
 
@@ -789,9 +835,11 @@ class TestNormalizeProgress:
         )
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs", side_effect=fake_normalize_lufs),
-            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch(
+                "wx4.steps.normalize.normalize_lufs", side_effect=fake_normalize_lufs
+            ),
+            patch("wx4.steps.normalize.to_aac", side_effect=fake_to_aac),
         ):
             normalize_step(ctx)
 

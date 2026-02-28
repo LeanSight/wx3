@@ -32,7 +32,7 @@ def _ctx(tmp_path, **kwargs) -> PipelineContext:
 class TestCacheCheckStep:
     def test_miss_when_src_not_in_cache(self, tmp_path):
         ctx = _ctx(tmp_path)
-        with patch("wx4.steps.load_cache", return_value={}):
+        with patch("wx4.steps.cache_check.load_cache", return_value={}):
             from wx4.steps import cache_check_step
 
             result = cache_check_step(ctx)
@@ -46,7 +46,7 @@ class TestCacheCheckStep:
         from wx4.cache_io import file_key
 
         cache_data = {file_key(ctx.src): {"output": enhanced.name}}
-        with patch("wx4.steps.load_cache", return_value=cache_data):
+        with patch("wx4.steps.cache_check.load_cache", return_value=cache_data):
             from wx4.steps import cache_check_step
 
             result = cache_check_step(ctx)
@@ -60,7 +60,7 @@ class TestCacheCheckStep:
         from wx4.cache_io import file_key
 
         cache_data = {file_key(ctx.src): {"output": enhanced.name}}
-        with patch("wx4.steps.load_cache", return_value=cache_data):
+        with patch("wx4.steps.cache_check.load_cache", return_value=cache_data):
             from wx4.steps import cache_check_step
 
             result = cache_check_step(ctx)
@@ -68,7 +68,7 @@ class TestCacheCheckStep:
 
     def test_timing_recorded_in_context(self, tmp_path):
         ctx = _ctx(tmp_path)
-        with patch("wx4.steps.load_cache", return_value={}):
+        with patch("wx4.steps.cache_check.load_cache", return_value={}):
             from wx4.steps import cache_check_step
 
             result = cache_check_step(ctx)
@@ -87,7 +87,7 @@ class TestCacheSaveStep:
         ctx = _ctx(tmp_path, enhanced=enhanced, cache_hit=False)
 
         with (
-            patch("wx4.steps.save_cache") as mock_save,
+            patch("wx4.steps.cache_save.save_cache") as mock_save,
             patch("wx4.steps.file_key", return_value="fake-key"),
         ):
             from wx4.steps import cache_save_step
@@ -100,7 +100,7 @@ class TestCacheSaveStep:
         enhanced.write_bytes(b"enhanced")
         ctx = _ctx(tmp_path, enhanced=enhanced, cache_hit=True)
 
-        with patch("wx4.steps.save_cache") as mock_save:
+        with patch("wx4.steps.cache_save.save_cache") as mock_save:
             from wx4.steps import cache_save_step
 
             cache_save_step(ctx)
@@ -109,7 +109,7 @@ class TestCacheSaveStep:
     def test_skips_when_enhanced_is_none(self, tmp_path):
         ctx = _ctx(tmp_path, enhanced=None, cache_hit=False)
 
-        with patch("wx4.steps.save_cache") as mock_save:
+        with patch("wx4.steps.cache_save.save_cache") as mock_save:
             from wx4.steps import cache_save_step
 
             cache_save_step(ctx)
@@ -121,7 +121,7 @@ class TestCacheSaveStep:
         ctx = _ctx(tmp_path, enhanced=enhanced, cache_hit=False)
 
         with (
-            patch("wx4.steps.save_cache"),
+            patch("wx4.steps.cache_save.save_cache"),
             patch("wx4.steps.file_key", return_value="k"),
         ):
             from wx4.steps import cache_save_step
@@ -154,11 +154,11 @@ class TestEnhanceStep:
             return True
 
         with (
-            patch("wx4.steps.apply_clearvoice") as m_cv,
-            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
-            patch("wx4.steps.extract_to_wav") as m_ext,
-            patch("wx4.steps.normalize_lufs") as m_norm,
-            patch("wx4.steps._load_clearvoice", return_value=mock_cv),
+            patch("wx4.steps.enhance.apply_clearvoice") as m_cv,
+            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.normalize.extract_to_wav") as m_ext,
+            patch("wx4.steps.normalize.normalize_lufs") as m_norm,
+            patch("wx4.steps.enhance._load_clearvoice", return_value=mock_cv),
         ):
             from wx4.steps import enhance_step
 
@@ -173,8 +173,8 @@ class TestEnhanceStep:
         ctx = _ctx(tmp_path, cache_hit=False)
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=False),
-            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
+            patch("wx4.steps.normalize.extract_to_wav", return_value=False),
+            patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -185,11 +185,11 @@ class TestEnhanceStep:
         ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs"),
-            patch("wx4.steps.apply_clearvoice"),
-            patch("wx4.steps.to_aac", return_value=False),
-            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize.normalize_lufs"),
+            patch("wx4.steps.enhance.apply_clearvoice"),
+            patch("wx4.steps.enhance.to_aac", return_value=False),
+            patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -218,7 +218,7 @@ class TestCacheCheckStepDiskFallback:
         enhanced = tmp_path / "audio_enhanced.m4a"
         enhanced.write_bytes(b"enhanced")
 
-        with patch("wx4.steps.load_cache", return_value={}):
+        with patch("wx4.steps.cache_check.load_cache", return_value={}):
             from wx4.steps import cache_check_step
 
             result = cache_check_step(PipelineContext(src=src))
@@ -230,7 +230,7 @@ class TestCacheCheckStepDiskFallback:
         src = tmp_path / "audio.mp3"
         src.write_bytes(b"fake audio")
 
-        with patch("wx4.steps.load_cache", return_value={}):
+        with patch("wx4.steps.cache_check.load_cache", return_value={}):
             from wx4.steps import cache_check_step
 
             result = cache_check_step(PipelineContext(src=src))
@@ -243,7 +243,7 @@ class TestNormalizeStep:
     def test_skips_when_cache_hit(self, tmp_path):
         ctx = _ctx(tmp_path, cache_hit=True)
 
-        with patch("wx4.steps.extract_to_wav") as m_ext:
+        with patch("wx4.steps.normalize.extract_to_wav") as m_ext:
             from wx4.steps import normalize_step
 
             result = normalize_step(ctx)
@@ -259,9 +259,9 @@ class TestNormalizeStep:
             return True
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True) as m_ext,
-            patch("wx4.steps.normalize_lufs") as m_norm,
-            patch("wx4.steps.to_aac", side_effect=fake_to_aac) as m_enc,
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True) as m_ext,
+            patch("wx4.steps.normalize.normalize_lufs") as m_norm,
+            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac) as m_enc,
         ):
             from wx4.steps import normalize_step
 
@@ -278,7 +278,7 @@ class TestNormalizeStep:
         norm.write_bytes(b"normalized")
         ctx = _ctx(tmp_path, cache_hit=True, normalized=norm)
 
-        with patch("wx4.steps.extract_to_wav") as m_ext:
+        with patch("wx4.steps.normalize.extract_to_wav") as m_ext:
             from wx4.steps import normalize_step
 
             result = normalize_step(ctx)
@@ -294,10 +294,10 @@ class TestNormalizeStep:
             return True
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs"),
-            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
-            patch("wx4.steps.apply_clearvoice") as m_cv,
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize.normalize_lufs"),
+            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.enhance.apply_clearvoice") as m_cv,
         ):
             from wx4.steps import normalize_step
 
@@ -313,9 +313,9 @@ class TestNormalizeStep:
             return True
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs"),
-            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize.normalize_lufs"),
+            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
         ):
             from wx4.steps import normalize_step
 
@@ -405,11 +405,11 @@ class TestEnhanceStepAtomicity:
             return True
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs"),
-            patch("wx4.steps.apply_clearvoice"),
-            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
-            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize.normalize_lufs"),
+            patch("wx4.steps.enhance.apply_clearvoice"),
+            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -440,11 +440,11 @@ class TestEnhanceStepAtomicity:
             dst.write_bytes(b"enh")
 
         with (
-            patch("wx4.steps.extract_to_wav", side_effect=fake_extract),
-            patch("wx4.steps.normalize_lufs", side_effect=fake_normalize),
-            patch("wx4.steps.apply_clearvoice", side_effect=fake_enhance),
-            patch("wx4.steps.to_aac", return_value=False),
-            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
+            patch("wx4.steps.normalize.extract_to_wav", side_effect=fake_extract),
+            patch("wx4.steps.normalize.normalize_lufs", side_effect=fake_normalize),
+            patch("wx4.steps.enhance.apply_clearvoice", side_effect=fake_enhance),
+            patch("wx4.steps.enhance.to_aac", return_value=False),
+            patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -461,11 +461,11 @@ class TestEnhanceStepAtomicity:
         out = tmp_path / f"{ctx.src.stem}_enhanced.m4a"
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs"),
-            patch("wx4.steps.apply_clearvoice"),
-            patch("wx4.steps.to_aac", return_value=False),
-            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize.normalize_lufs"),
+            patch("wx4.steps.enhance.apply_clearvoice"),
+            patch("wx4.steps.enhance.to_aac", return_value=False),
+            patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -491,7 +491,7 @@ class TestTranscribeStep:
         jsn.write_text("[]", encoding="utf-8")
 
         with patch(
-            "wx4.steps.transcribe_assemblyai", return_value=(txt, jsn)
+            "wx4.steps.transcribe.transcribe_assemblyai", return_value=(txt, jsn)
         ) as mock_t:
             from wx4.steps import transcribe_step
 
@@ -507,7 +507,7 @@ class TestTranscribeStep:
         jsn.write_text("[]", encoding="utf-8")
 
         with patch(
-            "wx4.steps.transcribe_assemblyai", return_value=(txt, jsn)
+            "wx4.steps.transcribe.transcribe_assemblyai", return_value=(txt, jsn)
         ) as mock_t:
             from wx4.steps import transcribe_step
 
@@ -521,7 +521,9 @@ class TestTranscribeStep:
         txt.write_text("", encoding="utf-8")
         jsn.write_text("[]", encoding="utf-8")
 
-        with patch("wx4.steps.transcribe_assemblyai", return_value=(txt, jsn)):
+        with patch(
+            "wx4.steps.transcribe.transcribe_assemblyai", return_value=(txt, jsn)
+        ):
             from wx4.steps import transcribe_step
 
             result = transcribe_step(ctx)
@@ -535,7 +537,9 @@ class TestTranscribeStep:
         txt.write_text("", encoding="utf-8")
         jsn.write_text("[]", encoding="utf-8")
 
-        with patch("wx4.steps.transcribe_assemblyai", return_value=(txt, jsn)):
+        with patch(
+            "wx4.steps.transcribe.transcribe_assemblyai", return_value=(txt, jsn)
+        ):
             from wx4.steps import transcribe_step
 
             result = transcribe_step(ctx)
@@ -562,7 +566,7 @@ class TestSrtStep:
         jsn.write_text(json.dumps(words), encoding="utf-8")
         ctx = _ctx(tmp_path, transcript_json=jsn)
 
-        with patch("wx4.steps.words_to_srt", return_value="1\n...") as mock_srt:
+        with patch("wx4.steps.srt.words_to_srt", return_value="1\n...") as mock_srt:
             from wx4.steps import srt_step
 
             srt_step(ctx)
@@ -602,7 +606,7 @@ class TestVideoStep:
         enhanced = tmp_path / "audio_enhanced.m4a"
         ctx = _ctx(tmp_path, enhanced=enhanced)
 
-        with patch("wx4.steps.audio_to_black_video", return_value=True) as mock_v:
+        with patch("wx4.steps.video.audio_to_black_video", return_value=True) as mock_v:
             from wx4.steps import video_step
 
             video_step(ctx)
@@ -611,7 +615,7 @@ class TestVideoStep:
     def test_raises_when_audio_to_black_video_returns_false(self, tmp_path):
         ctx = _ctx(tmp_path)
 
-        with patch("wx4.steps.audio_to_black_video", return_value=False):
+        with patch("wx4.steps.video.audio_to_black_video", return_value=False):
             from wx4.steps import video_step
 
             with pytest.raises(RuntimeError):
@@ -620,7 +624,7 @@ class TestVideoStep:
     def test_sets_video_out_on_ctx(self, tmp_path):
         ctx = _ctx(tmp_path)
 
-        with patch("wx4.steps.audio_to_black_video", return_value=True):
+        with patch("wx4.steps.video.audio_to_black_video", return_value=True):
             from wx4.steps import video_step
 
             result = video_step(ctx)
@@ -631,7 +635,7 @@ class TestVideoStep:
         """video_out and srt share the same stem for media player auto-pairing."""
         ctx = _ctx(tmp_path)
 
-        with patch("wx4.steps.audio_to_black_video", return_value=True):
+        with patch("wx4.steps.video.audio_to_black_video", return_value=True):
             from wx4.steps import video_step
 
             result = video_step(ctx)
@@ -640,7 +644,7 @@ class TestVideoStep:
     def test_timing_recorded(self, tmp_path):
         ctx = _ctx(tmp_path)
 
-        with patch("wx4.steps.audio_to_black_video", return_value=True):
+        with patch("wx4.steps.video.audio_to_black_video", return_value=True):
             from wx4.steps import video_step
 
             result = video_step(ctx)
@@ -655,13 +659,13 @@ class TestVideoStep:
         mock_info.has_audio = True
 
         with (
-            patch("wx4.steps.audio_to_black_video", return_value=True) as m_video,
-            patch("wx4.steps._compress_video") as m_compress,
-            patch("wx4.steps.probe_video", return_value=mock_info),
-            patch("wx4.steps.measure_audio_lufs", return_value=-20.0),
-            patch("wx4.steps.LufsInfo") as mock_lufs,
-            patch("wx4.steps.detect_best_encoder", return_value=MagicMock()),
-            patch("wx4.steps.calculate_video_bitrate") as m_bitrate,
+            patch("wx4.steps.video.audio_to_black_video", return_value=True) as m_video,
+            patch("wx4.steps.video._compress_video") as m_compress,
+            patch("wx4.steps.video.probe_video", return_value=mock_info),
+            patch("wx4.steps.video.measure_audio_lufs", return_value=-20.0),
+            patch("wx4.steps.video.LufsInfo") as mock_lufs,
+            patch("wx4.steps.video.detect_best_encoder", return_value=MagicMock()),
+            patch("wx4.steps.video.calculate_video_bitrate") as m_bitrate,
         ):
             m_bitrate.return_value = 500_000
             mock_lufs.from_measured.return_value = MagicMock()
@@ -686,13 +690,13 @@ class TestVideoStep:
         mock_info.has_audio = True
 
         with (
-            patch("wx4.steps.audio_to_black_video", return_value=True),
-            patch("wx4.steps._compress_video") as m_compress,
-            patch("wx4.steps.probe_video", return_value=mock_info),
-            patch("wx4.steps.measure_audio_lufs", return_value=-20.0),
-            patch("wx4.steps.LufsInfo") as mock_lufs,
-            patch("wx4.steps.detect_best_encoder", return_value=MagicMock()),
-            patch("wx4.steps.calculate_video_bitrate") as m_bitrate,
+            patch("wx4.steps.video.audio_to_black_video", return_value=True),
+            patch("wx4.steps.video._compress_video") as m_compress,
+            patch("wx4.steps.video.probe_video", return_value=mock_info),
+            patch("wx4.steps.video.measure_audio_lufs", return_value=-20.0),
+            patch("wx4.steps.video.LufsInfo") as mock_lufs,
+            patch("wx4.steps.video.detect_best_encoder", return_value=MagicMock()),
+            patch("wx4.steps.video.calculate_video_bitrate") as m_bitrate,
         ):
             m_bitrate.return_value = 500_000
             mock_lufs.from_measured.return_value = MagicMock()
@@ -713,8 +717,8 @@ class TestVideoStep:
         ctx = _ctx(tmp_path, compress_ratio=None)
 
         with (
-            patch("wx4.steps.audio_to_black_video", return_value=True) as m_video,
-            patch("wx4.steps._compress_video") as m_compress,
+            patch("wx4.steps.video.audio_to_black_video", return_value=True) as m_video,
+            patch("wx4.steps.video._compress_video") as m_compress,
         ):
             from wx4.steps import video_step
 
@@ -769,7 +773,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path)
 
         with patch(
-            "wx4.steps.probe_video", side_effect=RuntimeError("no video stream")
+            "wx4.steps.video.probe_video", side_effect=RuntimeError("no video stream")
         ):
             from wx4.steps import compress_step
 
@@ -781,7 +785,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path)
 
         with patch(
-            "wx4.steps.probe_video", side_effect=RuntimeError("no video stream")
+            "wx4.steps.video.probe_video", side_effect=RuntimeError("no video stream")
         ):
             from wx4.steps import compress_step
 
@@ -911,11 +915,11 @@ class TestEnhanceStepPassesStepProgress:
             return True
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs"),
-            patch("wx4.steps.apply_clearvoice") as m_enh,
-            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
-            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize.normalize_lufs"),
+            patch("wx4.steps.enhance.apply_clearvoice") as m_enh,
+            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -931,11 +935,11 @@ class TestEnhanceStepPassesStepProgress:
             return True
 
         with (
-            patch("wx4.steps.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize_lufs"),
-            patch("wx4.steps.apply_clearvoice") as m_enh,
-            patch("wx4.steps.to_aac", side_effect=fake_to_aac),
-            patch("wx4.steps._load_clearvoice", return_value=MagicMock()),
+            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
+            patch("wx4.steps.normalize.normalize_lufs"),
+            patch("wx4.steps.enhance.apply_clearvoice") as m_enh,
+            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
         ):
             from wx4.steps import enhance_step
 
@@ -962,9 +966,9 @@ class TestTranscribeStepBackendBranching:
         txt, jsn = self._make_files(tmp_path, "audio")
         with (
             patch(
-                "wx4.steps.transcribe_assemblyai", return_value=(txt, jsn)
+                "wx4.steps.transcribe.transcribe_assemblyai", return_value=(txt, jsn)
             ) as mock_aai,
-            patch("wx4.steps.transcribe_with_whisper") as mock_wh,
+            patch("wx4.steps.transcribe.transcribe_with_whisper") as mock_wh,
         ):
             from wx4.steps import transcribe_step
 
@@ -977,9 +981,9 @@ class TestTranscribeStepBackendBranching:
         txt, jsn = self._make_files(tmp_path, "audio")
         with (
             patch(
-                "wx4.steps.transcribe_with_whisper", return_value=(txt, jsn)
+                "wx4.steps.transcribe.transcribe_with_whisper", return_value=(txt, jsn)
             ) as mock_wh,
-            patch("wx4.steps.transcribe_assemblyai") as mock_aai,
+            patch("wx4.steps.transcribe.transcribe_assemblyai") as mock_aai,
         ):
             from wx4.steps import transcribe_step
 
@@ -991,7 +995,7 @@ class TestTranscribeStepBackendBranching:
         ctx = _ctx(tmp_path, transcribe_backend="whisper", hf_token="hf_secret")
         txt, jsn = self._make_files(tmp_path, "audio")
         with patch(
-            "wx4.steps.transcribe_with_whisper", return_value=(txt, jsn)
+            "wx4.steps.transcribe.transcribe_with_whisper", return_value=(txt, jsn)
         ) as mock_wh:
             from wx4.steps import transcribe_step
 
@@ -1002,7 +1006,7 @@ class TestTranscribeStepBackendBranching:
         ctx = _ctx(tmp_path, transcribe_backend="whisper", hf_token="x", device="cpu")
         txt, jsn = self._make_files(tmp_path, "audio")
         with patch(
-            "wx4.steps.transcribe_with_whisper", return_value=(txt, jsn)
+            "wx4.steps.transcribe.transcribe_with_whisper", return_value=(txt, jsn)
         ) as mock_wh:
             from wx4.steps import transcribe_step
 
@@ -1018,7 +1022,7 @@ class TestTranscribeStepBackendBranching:
         )
         txt, jsn = self._make_files(tmp_path, "audio")
         with patch(
-            "wx4.steps.transcribe_with_whisper", return_value=(txt, jsn)
+            "wx4.steps.transcribe.transcribe_with_whisper", return_value=(txt, jsn)
         ) as mock_wh:
             from wx4.steps import transcribe_step
 
