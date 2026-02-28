@@ -195,11 +195,33 @@ Resto de archivos (logic y infrastructure sin cambios): copiar directamente de w
 
 ---
 
-## Fase 1: Steps (ATDD/TDD)
+## S1 — Walking Skeleton: transcribe (assemblyai) + pipeline base
+
+AT:
+```python
+orchestrator.run(audio.m4a)
+assert ctx.transcript_txt.exists()
+assert ctx.transcript_json.exists()
+```
+
+Lo que crea: context.py, step_common.py (solo @timer), transcribe_step,
+pipeline.py (Pipeline.run minimo + MediaOrchestrator + build_audio_pipeline
+con solo transcribe_step), cli.py (minimo).
+Unit tests: slices 1, 4 y 5 de Step 3 (transcribe_step) de S2.
+Cruza todas las capas: CLI -> Orchestrator -> Pipeline -> Step -> disco.
+COMMIT + PUSH
+
+---
+
+## S2 — Harvest: port de todos los unit tests de steps
+
+No agrega AT de pipeline nueva. Los steps se implementan pero NO se cablear
+al pipeline (excepto transcribe, ya cableado en S1).
+Nota: los slices de transcribe_step en esta seccion amplian los 3 del S1.
 
 Metodologia por slice:
 ```
-Slice 1 - Walking Skeleton:
+Slice 1 - Walking Skeleton del step:
   RED   -> escribir AT, falla porque el step no existe
   DIAG  -> mejorar assert msgs con f-strings
   GREEN -> implementar step + Nullables via monkeypatch
@@ -357,7 +379,69 @@ Cambios desde wx4:
 
 ---
 
-## Fase 2: Pipeline + CLI (sin TDD en esta fase)
+## Slices S3-S8: cablear steps al pipeline (con ATs)
+
+Todos los steps ya tienen tests de S2. Cada slice solo cablea steps al pipeline
+y escribe el AT correspondiente.
+
+### S3 — Cablear normalize + enhance
+
+AT:
+```python
+assert ctx.normalized.exists()
+assert ctx.enhanced.exists()
+assert ctx.transcript_txt.exists()  # sigue verde
+```
+
+### S4 — Cablear srt + black_video (audio pipeline completo)
+
+AT:
+```python
+assert ctx.srt.exists()
+assert ctx.video_out.exists()
+```
+
+Audio pipeline completo: normalize -> enhance -> transcribe -> srt -> blackvideo.
+
+### S5 — Resumability (PipelineState)
+
+AT:
+```python
+orchestrator.run(audio.m4a)
+ctx.enhanced.unlink()              # simula interrupcion post-enhance
+orchestrator.run(audio.m4a)        # segunda ejecucion
+assert state.was_done("normalize")
+assert ctx.transcript_txt.exists() # recalculado
+```
+
+### S6 — Whisper backend
+
+AT:
+```python
+orchestrator.run(audio.m4a, backend="whisper")
+assert ctx.transcript_txt.exists()
+```
+
+### S7 — Video pipeline (compress)
+
+AT:
+```python
+orchestrator.run(video.mp4)
+assert ctx.video_compressed.exists()
+```
+
+### S8 — Dry run
+
+AT:
+```python
+decisions = orchestrator.dry_run(audio.m4a)
+assert not ctx.normalized.exists()  # ningun archivo creado
+assert decisions[0].would_run == True
+```
+
+---
+
+## Diseno de pipeline.py y cli.py
 
 **wx41/pipeline.py**:
 - `PipelineObserver` (Protocol @runtime_checkable): on_pipeline_start/end,
@@ -449,13 +533,17 @@ Los steps no reciben ni leen `PipelineConfig`.
 pytest wx41/tests/ -v
 ```
 
-Tests al completar Fase 1 (27 total):
+Al completar S1: `pytest wx41/tests/ -v -k "transcribe"` pasa (3 tests).
+Al completar S2: `pytest wx41/tests/ -v` pasa todos los unit tests (27 total):
 - `test_normalize_step.py`: 4 tests
 - `test_enhance_step.py`: 4 tests
 - `test_transcribe_step.py`: 5 tests
 - `test_srt_step.py`: 3 tests
 - `test_black_video_step.py`: 5 tests
 - `test_compress_step.py`: 4 tests
+
+Al completar S4: audio pipeline completo end-to-end.
+Al completar S8: pipeline funcional end-to-end para audio y video.
 
 ---
 
