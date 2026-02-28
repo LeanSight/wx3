@@ -378,6 +378,69 @@ Cambios desde wx4:
 - `main()` @app.command(): paths, compress, backend, force, skip_normalize,
   skip_enhance, dry_run, language, speakers, hf_token, whisper_model, device
 
+### Flujo declarativo: CLI -> PipelineConfig -> skip_fn
+
+La activacion/desactivacion de steps sigue una cadena de 3 pasos. Ningun step
+conoce los flags CLI; toda la logica de composicion vive en los builders.
+
+**Paso 1: CLI recibe flags como parametros Typer**
+
+```python
+@app.command()
+def main(
+    skip_normalize: bool = typer.Option(False, "--no-normalize"),
+    skip_enhance:   bool = typer.Option(False, "--no-enhance"),
+    compress:       Optional[float] = typer.Option(None, "--compress"),
+    videooutput:    bool = typer.Option(False, "--video-output"),
+    ...
+) -> None:
+```
+
+**Paso 2: CLI construye PipelineConfig (dataclass frozen) y delega a MediaOrchestrator**
+
+```python
+    config = PipelineConfig(
+        skip_normalize=skip_normalize,
+        skip_enhance=skip_enhance,
+        compress_ratio=compress,
+        videooutput=videooutput,
+    )
+    observer = RichPipelineObserver(Console())
+    orchestrator = MediaOrchestrator(config, [observer])
+
+    if dry_run:
+        media_type, decisions = orchestrator.dry_run(src)
+        _print_dry_run_table(console, media_type, decisions)
+    else:
+        for src in sources:
+            if _stop.is_set():
+                break
+            observer.reset()
+            orchestrator.run(src)
+```
+
+`PipelineConfig` es la unica fuente de verdad para flags de composicion.
+`main()` no construye steps ni pipelines directamente.
+
+**Paso 3: MediaOrchestrator pasa config a los builders; builders declaran skip_fn**
+
+```python
+def build_audio_pipeline(config: PipelineConfig, observers) -> Pipeline:
+    return Pipeline([
+        _step("normalize", normalize_step, "normalized",
+              skip_fn=lambda ctx: config.skip_normalize),
+        _step("enhance",   enhance_step,   "enhanced",
+              skip_fn=lambda ctx: config.skip_enhance),
+        _TRANSCRIBE,
+        _SRT,
+        _step("video", black_video_step, "video_out"),
+    ], observers)
+```
+
+`skip_fn` es una lambda que captura `config` en clausura. `Pipeline.run()`
+la evalua por step; si retorna `True` el step se salta sin ejecutar su funcion.
+Los steps no reciben ni leen `PipelineConfig`.
+
 ---
 
 ## Verificacion
