@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from wx41.steps.transcribe import TranscribeConfig
 
 
 @dataclass(frozen=True)
@@ -9,8 +12,9 @@ class PipelineConfig:
     skip_normalize: bool = False
     compress_ratio: Optional[float] = None
     force: bool = False
-    assembly_ai_key: Optional[str] = None
-    hf_token: Optional[str] = None
+
+    # Los steps publican sus propios configs
+    transcribe: Optional["TranscribeConfig"] = None
 
 
 @dataclass
@@ -33,12 +37,6 @@ class PipelineContext:
     compress_ratio: Optional[float] = None
 
     step_progress: Optional[Callable[[int, int], None]] = None
-
-    transcribe_backend: str = "assemblyai"
-    assembly_ai_key: Optional[str] = None
-    hf_token: Optional[str] = None
-    whisper_model: str = "openai/whisper-large-v3"
-    device: str = "auto"
 
     timings: Dict[str, float] = field(default_factory=dict)
 

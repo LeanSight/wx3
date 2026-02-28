@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Callable, List, Optional, Protocol, runtime_checkable
 
 from wx41.context import INTERMEDIATE_BY_STEP, PipelineConfig, PipelineContext
-from wx41.steps.transcribe import transcribe_step
+from wx41.steps.transcribe import TranscribeConfig, transcribe_step
 
 
 @runtime_checkable
@@ -100,17 +100,19 @@ def _transcribe_ctx_setter(ctx: PipelineContext, json_path: Path) -> PipelineCon
     return dataclasses.replace(ctx, transcript_json=json_path, transcript_txt=txt_path)
 
 
-_TRANSCRIBE = NamedStep(
-    name="transcribe",
-    fn=transcribe_step,
-    output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['transcribe']}",
-    skip_fn=None,
-    ctx_setter=_transcribe_ctx_setter,
-)
-
-
 def build_audio_pipeline(config: PipelineConfig, observers: List[PipelineObserver]) -> Pipeline:
-    return Pipeline([_TRANSCRIBE], observers)
+    # Composición declarativa: el step se configura con su objeto dedicado
+    t_cfg = config.transcribe or TranscribeConfig()
+    
+    transcribe = _step(
+        "transcribe",
+        lambda ctx: transcribe_step(ctx, t_cfg),
+        "transcript_json"
+    )
+    # Re-asignamos el ctx_setter especial para transcribe
+    transcribe = dataclasses.replace(transcribe, ctx_setter=_transcribe_ctx_setter)
+    
+    return Pipeline([transcribe], observers)
 
 
 class MediaOrchestrator:
@@ -122,9 +124,6 @@ class MediaOrchestrator:
         ctx = PipelineContext(
             src=src,
             force=self._config.force,
-            compress_ratio=self._config.compress_ratio,
-            assembly_ai_key=self._config.assembly_ai_key,
-            hf_token=self._config.hf_token,
         )
         pipeline = build_audio_pipeline(self._config, self._observers)
         return pipeline.run(ctx)
