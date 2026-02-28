@@ -9,6 +9,8 @@ class PipelineConfig:
     skip_normalize: bool = False
     compress_ratio: Optional[float] = None
     force: bool = False
+    assembly_ai_key: Optional[str] = None
+    hf_token: Optional[str] = None
 
 
 @dataclass
@@ -33,6 +35,7 @@ class PipelineContext:
     step_progress: Optional[Callable[[int, int], None]] = None
 
     transcribe_backend: str = "assemblyai"
+    assembly_ai_key: Optional[str] = None
     hf_token: Optional[str] = None
     whisper_model: str = "openai/whisper-large-v3"
     device: str = "auto"

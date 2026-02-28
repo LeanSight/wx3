@@ -123,6 +123,8 @@ class MediaOrchestrator:
             src=src,
             force=self._config.force,
             compress_ratio=self._config.compress_ratio,
+            assembly_ai_key=self._config.assembly_ai_key,
+            hf_token=self._config.hf_token,
         )
         pipeline = build_audio_pipeline(self._config, self._observers)
         return pipeline.run(ctx)

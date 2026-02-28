@@ -16,6 +16,7 @@ def transcribe_step(ctx: PipelineContext) -> PipelineContext:
             ctx.language,
             ctx.speakers,
             progress_callback=ctx.step_progress,
+            api_key=ctx.assembly_ai_key,
         )
     elif ctx.transcribe_backend == "whisper":
         txt_path, json_path = transcribe_with_whisper(

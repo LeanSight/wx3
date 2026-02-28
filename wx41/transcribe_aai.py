@@ -10,12 +10,13 @@ def transcribe_assemblyai(
     lang: Optional[str] = None,
     speakers: Optional[int] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
+    api_key: Optional[str] = None,
 ) -> Tuple[Path, Path]:
     import assemblyai as aai
 
-    api_key = os.environ.get("ASSEMBLY_AI_KEY")
+    api_key = api_key or os.environ.get("ASSEMBLY_AI_KEY")
     if not api_key:
-        raise RuntimeError("ASSEMBLY_AI_KEY env var not set")
+        raise RuntimeError("ASSEMBLY_AI_KEY not provided as argument and not set as env var")
 
     aai.settings.api_key = api_key
 

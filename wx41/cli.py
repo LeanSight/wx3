@@ -16,8 +16,14 @@ def main(
     force: bool = typer.Option(False, "--force"),
     language: Optional[str] = typer.Option(None, "--language"),
     speakers: Optional[int] = typer.Option(None, "--speakers"),
+    aai_key: Optional[str] = typer.Option(None, "--aai-key"),
+    hf_token: Optional[str] = typer.Option(None, "--hf-token"),
 ) -> None:
-    config = PipelineConfig()
+    config = PipelineConfig(
+        force=force,
+        assembly_ai_key=aai_key,
+        hf_token=hf_token,
+    )
     orchestrator = MediaOrchestrator(config, [])
     orchestrator.run(src)
 
