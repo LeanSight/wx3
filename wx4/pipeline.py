@@ -170,18 +170,12 @@ class Pipeline:
                 )
             )
 
-            if (
-                would_run
-                and isinstance(step, NamedStep)
-                and step.ctx_setter is not None
-            ):
-                ctx = step.ctx_setter(ctx, out)
-
         return decisions
 
 
 # Output path lambdas for build_steps() - usa constantes de context.py
 from wx4.context import INTERMEDIATE_BY_STEP
+
 
 _ENHANCE_OUT = lambda ctx: (
     ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['enhance']}"
@@ -189,6 +183,8 @@ _ENHANCE_OUT = lambda ctx: (
 _NORMALIZE_OUT = lambda ctx: (
     ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['normalize']}"
 )
+
+
 _COMPRESS_OUT = lambda ctx: (
     ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['compress']}"
 )

@@ -86,6 +86,18 @@ def cache_check_step(ctx: PipelineContext) -> PipelineContext:
             timings={**ctx.timings, "cache_check": time.time() - t0},
         )
 
+    normalized_path = (
+        ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['normalize']}"
+    )
+    if normalized_path.exists():
+        return dataclasses.replace(
+            ctx,
+            normalized=normalized_path,
+            cache_hit=True,
+            cache=cache,
+            timings={**ctx.timings, "cache_check": time.time() - t0},
+        )
+
     return dataclasses.replace(
         ctx,
         cache_hit=False,
