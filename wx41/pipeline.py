@@ -1,30 +1,20 @@
 import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Protocol, runtime_checkable
 
 from wx41.context import INTERMEDIATE_BY_STEP, PipelineConfig, PipelineContext
 from wx41.steps.transcribe import transcribe_step
 
 
-class PipelineObserver:
-    def on_pipeline_start(self, step_names: List[str], ctx: PipelineContext) -> None:
-        pass
-
-    def on_step_start(self, name: str, ctx: PipelineContext) -> None:
-        pass
-
-    def on_step_end(self, name: str, ctx: PipelineContext) -> None:
-        pass
-
-    def on_step_skipped(self, name: str, reason: str, ctx: PipelineContext) -> None:
-        pass
-
-    def on_step_progress(self, name: str, done: int, total: int) -> None:
-        pass
-
-    def on_pipeline_end(self, ctx: PipelineContext) -> None:
-        pass
+@runtime_checkable
+class PipelineObserver(Protocol):
+    def on_pipeline_start(self, step_names: List[str], ctx: PipelineContext) -> None: ...
+    def on_step_start(self, name: str, ctx: PipelineContext) -> None: ...
+    def on_step_end(self, name: str, ctx: PipelineContext) -> None: ...
+    def on_step_skipped(self, name: str, reason: str, ctx: PipelineContext) -> None: ...
+    def on_step_progress(self, name: str, done: int, total: int) -> None: ...
+    def on_pipeline_end(self, ctx: PipelineContext) -> None: ...
 
 
 @dataclass

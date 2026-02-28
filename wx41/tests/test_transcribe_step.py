@@ -87,3 +87,28 @@ class TestTranscribeStepTiming:
         assert result.timings["transcribe"] >= 0, f"timing invalido: {result.timings['transcribe']}"
 
 
+class TestTranscribeStepBackend:
+    def test_whisper_backend(self, tmp_path, monkeypatch):
+        ctx = make_ctx(tmp_path, transcribe_backend="whisper")
+        txt, jsn = _fake_files(tmp_path, "audio")
+
+        captured = []
+
+        def fake_whisper(audio, *a, **kw):
+            captured.append(audio)
+            return txt, jsn
+
+        monkeypatch.setattr("wx41.steps.transcribe.transcribe_with_whisper", fake_whisper)
+
+        result = transcribe_step(ctx)
+
+        assert result.transcript_txt == txt, f"transcript_txt incorrecto: {result.transcript_txt}"
+        assert result.transcript_json == jsn, f"transcript_json incorrecto: {result.transcript_json}"
+
+    def test_unknown_backend_raises(self, tmp_path, monkeypatch):
+        ctx = make_ctx(tmp_path, transcribe_backend="unknown_backend")
+
+        with pytest.raises(RuntimeError, match="Unknown transcribe_backend"):
+            transcribe_step(ctx)
+
+
