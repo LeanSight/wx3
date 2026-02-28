@@ -12,7 +12,7 @@
 
 4. **One-piece-flow**: el trabajo se divide en slices verticales mínimos. Cada slice atraviesa todas las capas necesarias (test + producción) y termina en GREEN antes de abrir el siguiente.
 
-5. **Commit + push por slice**: cada slice completo (GREEN + refactor) genera un commit atómico con mensaje descriptivo y se pushea antes de avanzar.
+5. **Commit + push por cada GREEN**: inmediatamente después de que un test (AT o Unit) pase a GREEN, se genera un commit y se pushea. No esperar al final del slice.
 
 ---
 
@@ -34,13 +34,14 @@
 4. Escribir unit tests en la capa afectada → RED
 5. Mejorar mensajes de fallo de los unit tests
 6. Escribir producción mínima → GREEN
-7. Refactor si es necesario (tests siguen GREEN)
-8. git commit + git push
-9. Avanzar al siguiente slice
+7. **git commit + git push (INMEDIATO)**
+8. Refactor si es necesario (tests siguen GREEN)
+9. **git commit + git push (si hubo cambios)**
+10. Avanzar al siguiente slice
 ```
 
 **Reglas:**
-- Un slice = un commit = un push
+- **Un GREEN = un commit = un push**
 - Nunca avanzar al slice N+1 si el slice N no está en GREEN
 - **NUNCA** cambiar el orden de implementación de los slices presentado en un plan
 
