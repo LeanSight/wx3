@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Callable, List, Optional, Protocol, runtime_checkable
 
 from wx41.context import INTERMEDIATE_BY_STEP, PipelineConfig, PipelineContext
-from wx41.steps.transcribe import TranscribeConfig, transcribe_step
 
 
 @runtime_checkable
@@ -15,14 +14,6 @@ class PipelineObserver(Protocol):
     def on_step_skipped(self, name: str, reason: str, ctx: PipelineContext) -> None: ...
     def on_step_progress(self, name: str, done: int, total: int) -> None: ...
     def on_pipeline_end(self, ctx: PipelineContext) -> None: ...
-
-
-@dataclass
-class StepDecision:
-    name: str
-    would_run: bool
-    output_path: Optional[Path]
-    reason: str
 
 
 @dataclass
@@ -101,15 +92,19 @@ def _transcribe_ctx_setter(ctx: PipelineContext, json_path: Path) -> PipelineCon
 
 
 def build_audio_pipeline(config: PipelineConfig, observers: List[PipelineObserver]) -> Pipeline:
-    # Composición declarativa: el step se configura con su objeto dedicado
-    t_cfg = config.transcribe or TranscribeConfig()
+    # EL builder ahora es puramente composable
+    # Cada step se configura con su objeto específico pasado en 'config.settings'
+    # o con una lambda/partial si se prefiere. 
+    # El config genérico del pipeline es solo un mapa.
+    
+    from wx41.steps.transcribe import transcribe_step, TranscribeConfig
+    t_cfg = config.settings.get("transcribe", TranscribeConfig())
     
     transcribe = _step(
         "transcribe",
         lambda ctx: transcribe_step(ctx, t_cfg),
         "transcript_json"
     )
-    # Re-asignamos el ctx_setter especial para transcribe
     transcribe = dataclasses.replace(transcribe, ctx_setter=_transcribe_ctx_setter)
     
     return Pipeline([transcribe], observers)
@@ -124,9 +119,6 @@ class MediaOrchestrator:
         ctx = PipelineContext(
             src=src,
             force=self._config.force,
-            language=self._config.language,
-            speakers=self._config.speakers,
-            compress_ratio=self._config.compress_ratio,
         )
         pipeline = build_audio_pipeline(self._config, self._observers)
         return pipeline.run(ctx)

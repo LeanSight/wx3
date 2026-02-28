@@ -1,28 +1,22 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, Optional, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from wx41.steps.transcribe import TranscribeConfig
+from typing import Any, Callable, Dict, Optional
 
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    skip_enhance: bool = False
-    skip_normalize: bool = False
-    compress_ratio: Optional[float] = None
     force: bool = False
-    language: Optional[str] = None
-    speakers: Optional[int] = None
-
-    # Los steps publican sus propios configs
-    transcribe: Optional["TranscribeConfig"] = None
+    # Contenedor genérico para configuraciones de steps
+    # Cada clave es el nombre del step, el valor es su objeto de config o dict
+    settings: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class PipelineContext:
     src: Path
+    force: bool = False
 
+    # Archivos intermedios (Estado)
     enhanced: Optional[Path] = None
     normalized: Optional[Path] = None
     transcript_txt: Optional[Path] = None
@@ -31,19 +25,15 @@ class PipelineContext:
     video_out: Optional[Path] = None
     video_compressed: Optional[Path] = None
 
-    srt_mode: str = "speaker-only"
-    force: bool = False
+    # Parámetros compartidos de negocio (no infraestructura)
     language: Optional[str] = None
     speakers: Optional[int] = None
     speaker_names: Dict[str, str] = field(default_factory=dict)
     compress_ratio: Optional[float] = None
 
     step_progress: Optional[Callable[[int, int], None]] = None
-
     timings: Dict[str, float] = field(default_factory=dict)
 
-
-Step = Callable[[PipelineContext], PipelineContext]
 
 INTERMEDIATE_BY_STEP = {
     "normalize": "_normalized.m4a",
@@ -53,8 +43,4 @@ INTERMEDIATE_BY_STEP = {
     "srt": "_timestamps.srt",
     "video": "_timestamps.mp4",
     "compress": "_compressed.mp4",
-    "tmp_raw": "._tmp_raw.wav",
-    "tmp_norm": "._tmp_norm.wav",
 }
-
-INTERMEDIATE_PATTERNS = tuple(dict.fromkeys(INTERMEDIATE_BY_STEP.values()))
