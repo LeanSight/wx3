@@ -86,6 +86,9 @@ Necesita I/O?
 | infrastructure | Narrow Integration Test con sistema real | Nunca |
 | application (steps) | Sociable Test con Nullable via monkeypatch | Solo para I/O externo |
 
+**Referencia obligatoria**: ver `devdocs/nullable_vs_mocks.md` para la diferencia entre
+Nullables (SI) y Mocks (NO), y por que `step_common` no se toca.
+
 Regla universal de assert:
 ```python
 assert ctx.normalized is not None, "normalize_step debe setear ctx.normalized"
@@ -321,11 +324,14 @@ def black_video_step(ctx: PipelineContext) -> PipelineContext:
 
 Fuente: `wx4/steps/compress.py`
 
+**Solo existe en VideoPipeline.** AudioPipeline usa black_video_step unicamente.
+
 Slices:
-1. (Walking Skeleton) `compress_step(ctx, media_type="audio", video_out=mp4)` -> `ctx.video_compressed`
-2. `media_type="video"` -> usa `ctx.src` como `src_video`
-3. `run_compression` lanza `RuntimeError` -> propaga sin silencio
-4. `ctx.timings["compress"]` presente y `>= 0`
+1. (Walking Skeleton) `compress_step(ctx)` -> `ctx.video_compressed`
+2. `ctx.enhanced` existe -> usa enhanced como audio_source
+3. `ctx.enhanced` no existe -> usa `ctx.src` como audio_source
+4. `run_compression` lanza `RuntimeError` -> propaga sin silencio
+5. `ctx.timings["compress"]` presente y `>= 0`
 
 Nullables:
 - `wx41.step_common.run_compression` -> `lambda *a, **kw: out_arg.touch()` (crea el archivo)
@@ -333,9 +339,7 @@ Nullables:
 Cambios desde wx4:
 - REEMPLAZAR: secuencia probe+lufs+encoder+bitrate -> `run_compression(src_video, audio_source, out, ctx.compress_ratio, ctx.step_progress)`
 - REEMPLAZAR: timing manual -> `@timer("compress")`
-- AGREGAR: deteccion de `src_video` por `ctx.media_type`:
-  - `"audio"` -> `ctx.video_out` (generado por black_video_step)
-  - `"video"` -> `ctx.src`
+- AGREGAR: audio_source es `ctx.enhanced` si existe, sino `ctx.src`
 - ELIMINAR: `except RuntimeError: return dataclasses.replace(...)` -- raise siempre
 
 ---
@@ -613,16 +617,25 @@ def build_audio_pipeline(config: PipelineConfig, observers) -> Pipeline:
             ctx_setter=lambda ctx, p: dataclasses.replace(ctx, video_out=p),
         ),
     ]
-    if config.compress_ratio is not None:
-        steps.append(NamedStep(
-            "compress", compress_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['compress']}",
-            ctx_setter=lambda ctx, p: dataclasses.replace(ctx, video_compressed=p),
-        ))
     return Pipeline(steps, observers)
 
 def build_video_pipeline(config: PipelineConfig, observers) -> Pipeline:
-    steps = [
+    steps = []
+    if not config.skip_normalize:
+        steps.append(NamedStep(
+            "normalize", normalize_step,
+            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['normalize']}",
+            skip_fn=lambda ctx: config.skip_normalize,
+            ctx_setter=lambda ctx, p: dataclasses.replace(ctx, normalized=p),
+        ))
+    if not config.skip_enhance:
+        steps.append(NamedStep(
+            "enhance", enhance_step,
+            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['enhance']}",
+            skip_fn=lambda ctx: config.skip_enhance,
+            ctx_setter=lambda ctx, p: dataclasses.replace(ctx, enhanced=p),
+        ))
+    steps.extend([
         _TRANSCRIBE,
         _SRT,
         NamedStep(
@@ -630,7 +643,7 @@ def build_video_pipeline(config: PipelineConfig, observers) -> Pipeline:
             output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['compress']}",
             ctx_setter=lambda ctx, p: dataclasses.replace(ctx, video_compressed=p),
         ),
-    ]
+    ])
     return Pipeline(steps, observers)
 ```
 
