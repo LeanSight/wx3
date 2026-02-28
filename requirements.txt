@@ -18,5 +18,7 @@ semver>=3.0
 typing-extensions>=4.0.0
 rich
 transformers
+typer[all]
+assemblyai>=0.28.0
 
 pyav
