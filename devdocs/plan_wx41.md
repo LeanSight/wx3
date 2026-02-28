@@ -67,7 +67,7 @@ Necesita I/O?
 | `steps/transcribe.py` | application | MODIFICAR: @timer + progress_callback |
 | `steps/srt.py` | application | MODIFICAR: @timer + write_text explicito |
 | `steps/video.py` | SEPARAR | black_video_step (solo video) + compress ya existe |
-| `steps/compress.py` | application | MODIFICAR: run_compression + media_type + no silencio |
+| `steps/compress.py` | application | MODIFICAR: run_compression, audio_source desde ctx.enhanced, raise en error |
 
 ### Violaciones A-Frame identificadas en wx4 (todas se corrigen en wx41)
 
@@ -127,7 +127,7 @@ wx41/
   # application shared
   context.py          PipelineContext, PipelineConfig, INTERMEDIATE_BY_STEP  [MODIFICADO]
   step_common.py      @timer, atomic_output, temp_files, run_compression, PipelineState  [NUEVO]
-  pipeline.py         NamedStep, Pipeline, PipelineObserver, StepDecision,
+  pipeline.py         _step, NamedStep, Pipeline, PipelineObserver, StepDecision,
                       MediaType, build_audio_pipeline, build_video_pipeline,
                       MediaOrchestrator, detect_media_type, make_initial_ctx
   cli.py              app Typer, RichPipelineObserver, main
@@ -139,7 +139,7 @@ wx41/
     transcribe.py     [MODIFICADO: @timer, progress_callback]
     srt.py            [MODIFICADO: @timer, write_text explicito]
     black_video.py    [NUEVO: extraido de wx4/steps/video.py]
-    compress.py       [MODIFICADO: run_compression, media_type routing, raise en error]
+    compress.py       [MODIFICADO: run_compression, audio_source desde ctx.enhanced, raise en error]
 
   tests/
     __init__.py
@@ -158,7 +158,6 @@ wx41/
 
 **wx41/context.py** (copiar wx4/context.py + limpiar):
 - Eliminar: cache_hit, cache, output_m4a
-- Agregar: `media_type: str = "audio"`
 - INTERMEDIATE_BY_STEP: sin cambios
 
 **wx41/step_common.py** (crear nuevo):
@@ -349,7 +348,8 @@ Cambios desde wx4:
 **wx41/pipeline.py**:
 - `PipelineObserver` (Protocol @runtime_checkable): on_pipeline_start/end,
   on_step_start/end/skipped(reason), on_step_progress
-- `NamedStep` (dataclass): name, fn, output_fn, skip_fn
+- `NamedStep` (dataclass): name, fn, output_fn, skip_fn, ctx_setter
+- `_step(name, fn, ctx_field, skip_fn=None)`: factory que lee suffix de INTERMEDIATE_BY_STEP
 - `StepDecision` (dataclass): name, would_run, output_path, reason
 - `Pipeline.run(ctx)`, `Pipeline.dry_run(ctx)`
 - `build_audio_pipeline(config, observers)` -> Pipeline
@@ -388,7 +388,7 @@ Tests al completar Fase 1 (27 total):
 |--------------|-----------|----------------|
 | `format_srt.py` | `wx4/format_srt.py` | Eliminar output_file de words_to_srt |
 | `transcribe_aai.py` | `wx4/transcribe_aai.py` | submit + polling + progress_callback |
-| `context.py` | `wx4/context.py` | Eliminar cache fields, agregar media_type |
+| `context.py` | `wx4/context.py` | Eliminar cache fields (cache_hit, cache, output_m4a) |
 | `step_common.py` | (nuevo) | @timer, atomic_output, temp_files, run_compression, PipelineState |
 | `steps/normalize.py` | `wx4/steps/normalize.py` | Ver slices Step 1 |
 | `steps/enhance.py` | `wx4/steps/enhance.py` | Ver slices Step 2 |
@@ -579,72 +579,38 @@ def dry_run(self, ctx: PipelineContext) -> list[StepDecision]:
 `_detect_intermediate_files(ctx)` es funcion pura: escanea el directorio y puebla
 `ctx.normalized`, `ctx.enhanced`, etc. segun archivos existentes. Sin I/O de escritura.
 
-### build_audio_pipeline y build_video_pipeline
+### _step factory y build_audio_pipeline / build_video_pipeline
 
 ```python
-from wx41.context import INTERMEDIATE_BY_STEP
+def _step(name: str, fn, ctx_field: str, skip_fn=None) -> NamedStep:
+    suffix = INTERMEDIATE_BY_STEP[name]
+    return NamedStep(
+        name, fn,
+        output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{suffix}",
+        skip_fn=skip_fn,
+        ctx_setter=lambda ctx, p: dataclasses.replace(ctx, **{ctx_field: p}),
+    )
 
-_TRANSCRIBE = NamedStep(
-    "transcribe", transcribe_step,
-    output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['transcribe']}",
-    ctx_setter=lambda ctx, p: dataclasses.replace(ctx, transcript_json=p),
-)
-_SRT = NamedStep(
-    "srt", srt_step,
-    output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['srt']}",
-    ctx_setter=lambda ctx, p: dataclasses.replace(ctx, srt=p),
-)
+_TRANSCRIBE = _step("transcribe", transcribe_step, "transcript_json")
+_SRT        = _step("srt",        srt_step,        "srt")
 
 def build_audio_pipeline(config: PipelineConfig, observers) -> Pipeline:
-    steps = [
-        NamedStep(
-            "normalize", normalize_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['normalize']}",
-            skip_fn=lambda ctx: config.skip_normalize,
-            ctx_setter=lambda ctx, p: dataclasses.replace(ctx, normalized=p),
-        ),
-        NamedStep(
-            "enhance", enhance_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['enhance']}",
-            skip_fn=lambda ctx: config.skip_enhance,
-            ctx_setter=lambda ctx, p: dataclasses.replace(ctx, enhanced=p),
-        ),
+    return Pipeline([
+        _step("normalize", normalize_step, "normalized", skip_fn=lambda ctx: config.skip_normalize),
+        _step("enhance",   enhance_step,   "enhanced",   skip_fn=lambda ctx: config.skip_enhance),
         _TRANSCRIBE,
         _SRT,
-        NamedStep(
-            "black_video", black_video_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['video']}",
-            ctx_setter=lambda ctx, p: dataclasses.replace(ctx, video_out=p),
-        ),
-    ]
-    return Pipeline(steps, observers)
+        _step("video", black_video_step, "video_out"),
+    ], observers)
 
 def build_video_pipeline(config: PipelineConfig, observers) -> Pipeline:
-    steps = []
-    if not config.skip_normalize:
-        steps.append(NamedStep(
-            "normalize", normalize_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['normalize']}",
-            skip_fn=lambda ctx: config.skip_normalize,
-            ctx_setter=lambda ctx, p: dataclasses.replace(ctx, normalized=p),
-        ))
-    if not config.skip_enhance:
-        steps.append(NamedStep(
-            "enhance", enhance_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['enhance']}",
-            skip_fn=lambda ctx: config.skip_enhance,
-            ctx_setter=lambda ctx, p: dataclasses.replace(ctx, enhanced=p),
-        ))
-    steps.extend([
+    return Pipeline([
+        _step("normalize", normalize_step, "normalized", skip_fn=lambda ctx: config.skip_normalize),
+        _step("enhance",   enhance_step,   "enhanced",   skip_fn=lambda ctx: config.skip_enhance),
         _TRANSCRIBE,
         _SRT,
-        NamedStep(
-            "compress", compress_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['compress']}",
-            ctx_setter=lambda ctx, p: dataclasses.replace(ctx, video_compressed=p),
-        ),
-    ])
-    return Pipeline(steps, observers)
+        _step("compress", compress_step, "video_compressed"),
+    ], observers)
 ```
 
 ### MediaOrchestrator
