@@ -90,7 +90,7 @@ Regla universal de assert:
 ```python
 assert ctx.normalized is not None, "normalize_step debe setear ctx.normalized"
 assert ctx.normalized.exists(), f"archivo no creado: {ctx.normalized}"
-assert ctx.normalized.name.endswith("_normalized.m4a"), f"sufijo: {ctx.normalized.name}"
+assert ctx.normalized.name.endswith(INTERMEDIATE_BY_STEP["normalize"]), f"sufijo: {ctx.normalized.name}"
 assert "normalize" in ctx.timings, f"timings actuales: {ctx.timings}"
 assert ctx.timings["normalize"] >= 0, f"timing invalido: {ctx.timings['normalize']}"
 ```
@@ -578,14 +578,16 @@ def dry_run(self, ctx: PipelineContext) -> list[StepDecision]:
 ### build_audio_pipeline y build_video_pipeline
 
 ```python
+from wx41.context import INTERMEDIATE_BY_STEP
+
 _TRANSCRIBE = NamedStep(
     "transcribe", transcribe_step,
-    output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}_timestamps.json",
+    output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['transcribe']}",
     ctx_setter=lambda ctx, p: dataclasses.replace(ctx, transcript_json=p),
 )
 _SRT = NamedStep(
     "srt", srt_step,
-    output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}_timestamps.srt",
+    output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['srt']}",
     ctx_setter=lambda ctx, p: dataclasses.replace(ctx, srt=p),
 )
 
@@ -593,13 +595,13 @@ def build_audio_pipeline(config: PipelineConfig, observers) -> Pipeline:
     steps = [
         NamedStep(
             "normalize", normalize_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}_normalized.m4a",
+            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['normalize']}",
             skip_fn=lambda ctx: config.skip_normalize,
             ctx_setter=lambda ctx, p: dataclasses.replace(ctx, normalized=p),
         ),
         NamedStep(
             "enhance", enhance_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}_enhanced.m4a",
+            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['enhance']}",
             skip_fn=lambda ctx: config.skip_enhance,
             ctx_setter=lambda ctx, p: dataclasses.replace(ctx, enhanced=p),
         ),
@@ -607,14 +609,14 @@ def build_audio_pipeline(config: PipelineConfig, observers) -> Pipeline:
         _SRT,
         NamedStep(
             "black_video", black_video_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}_timestamps.mp4",
+            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['video']}",
             ctx_setter=lambda ctx, p: dataclasses.replace(ctx, video_out=p),
         ),
     ]
     if config.compress_ratio is not None:
         steps.append(NamedStep(
             "compress", compress_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}_compressed.mp4",
+            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['compress']}",
             ctx_setter=lambda ctx, p: dataclasses.replace(ctx, video_compressed=p),
         ))
     return Pipeline(steps, observers)
@@ -625,7 +627,7 @@ def build_video_pipeline(config: PipelineConfig, observers) -> Pipeline:
         _SRT,
         NamedStep(
             "compress", compress_step,
-            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}_compressed.mp4",
+            output_fn=lambda ctx: ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['compress']}",
             ctx_setter=lambda ctx, p: dataclasses.replace(ctx, video_compressed=p),
         ),
     ]

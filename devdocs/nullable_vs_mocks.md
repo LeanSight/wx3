@@ -6,6 +6,7 @@ El step wx41 quedara asi (simplificado):
 
 ```python
 # wx41/steps/normalize.py
+from wx41.context import INTERMEDIATE_BY_STEP
 from wx41.step_common import timer, atomic_output, temp_files
 from wx41.audio_extract import extract_to_wav
 from wx41.audio_normalize import normalize_lufs
@@ -13,9 +14,9 @@ from wx41.audio_encode import to_aac
 
 @timer("normalize")
 def normalize_step(ctx):
-    out = ctx.src.parent / f"{ctx.src.stem}_normalized.m4a"
-    tmp_raw = ctx.src.parent / f"{ctx.src.stem}._tmp_raw.wav"
-    tmp_norm = ctx.src.parent / f"{ctx.src.stem}._tmp_norm.wav"
+    out = ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['normalize']}"
+    tmp_raw = ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['tmp_raw']}"
+    tmp_norm = ctx.src.parent / f"{ctx.src.stem}{INTERMEDIATE_BY_STEP['tmp_norm']}"
 
     with temp_files(tmp_raw, tmp_norm):
         if not extract_to_wav(ctx.src, tmp_raw):
@@ -83,6 +84,8 @@ monkeypatch.setattr("wx41.steps.normalize.to_aac",
 ## El test completo y que verifica
 
 ```python
+from wx41.context import INTERMEDIATE_BY_STEP
+
 def test_normalize_step_walking_skeleton(tmp_path, monkeypatch):
     src = tmp_path / "video.mp3"
     src.write_bytes(b"fake")
@@ -97,18 +100,18 @@ def test_normalize_step_walking_skeleton(tmp_path, monkeypatch):
 
     result = normalize_step(ctx)
 
-    assert result.normalized is not None,                      "normalize_step debe setear ctx.normalized"
-    assert result.normalized.exists(),                         f"archivo no creado: {result.normalized}"
-    assert result.normalized.name.endswith("_normalized.m4a"), f"sufijo: {result.normalized.name}"
-    assert "normalize" in result.timings,                      f"timings actuales: {result.timings}"
-    assert result.timings["normalize"] >= 0,                   f"timing invalido: {result.timings['normalize']}"
+    assert result.normalized is not None,                                              "normalize_step debe setear ctx.normalized"
+    assert result.normalized.exists(),                                                 f"archivo no creado: {result.normalized}"
+    assert result.normalized.name.endswith(INTERMEDIATE_BY_STEP["normalize"]),        f"sufijo: {result.normalized.name}"
+    assert "normalize" in result.timings,                                              f"timings actuales: {result.timings}"
+    assert result.timings["normalize"] >= 0,                                           f"timing invalido: {result.timings['normalize']}"
 
-    assert not (tmp_path / "video._tmp_raw.wav").exists(),  "tmp_raw no limpiado"
-    assert not (tmp_path / "video._tmp_norm.wav").exists(), "tmp_norm no limpiado"
+    assert not (tmp_path / f"video{INTERMEDIATE_BY_STEP['tmp_raw']}").exists(),  "tmp_raw no limpiado"
+    assert not (tmp_path / f"video{INTERMEDIATE_BY_STEP['tmp_norm']}").exists(), "tmp_norm no limpiado"
 ```
 
 `@timer` corrio real -> `timings["normalize"]` existe y es `>= 0`.
-`atomic_output` corrio real -> `_normalized.m4a` existe en disco.
+`atomic_output` corrio real -> `INTERMEDIATE_BY_STEP["normalize"]` existe en disco.
 `temp_files` corrio real -> los `._tmp_*.wav` no existen.
 FFmpeg nunca se invoco -> test corre en 2ms sin dependencias externas.
 
