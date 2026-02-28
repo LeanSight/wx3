@@ -66,6 +66,17 @@ class Pipeline:
         for cb in self.callbacks:
             cb.on_pipeline_start(names, ctx)
 
+        from wx4.steps import cache_check_step
+
+        cache_check_step_fn = None
+        for step in self.steps:
+            if hasattr(step, "fn") and step.fn is cache_check_step:
+                cache_check_step_fn = step
+                break
+
+        if cache_check_step_fn is not None:
+            ctx = cache_check_step_fn(ctx)
+
         try:
             for step in self.steps:
                 out = step.output_path(ctx) if isinstance(step, NamedStep) else None
