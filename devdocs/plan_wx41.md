@@ -5,6 +5,20 @@ Ref: wx41.md (arquitectura y diseno), devdocs/standard-atdd-tdd.md (metodologia)
 
 ---
 
+## Objetivos funcionales
+
+Los cinco objetivos que wx41 debe cumplir, y donde los implementa:
+
+| Objetivo | Componente | Seccion del plan |
+|----------|------------|-----------------|
+| **Encadenado de steps** | `Pipeline.run()` ejecuta `NamedStep` en orden; cada step recibe y retorna `PipelineContext` inmutable | Fase 2: Pipeline.run() |
+| **Activacion/desactivacion declarativa** | `PipelineConfig` (flags inmutables); `_step(skip_fn=...)` en `build_audio_pipeline` / `build_video_pipeline`; pasar `skip_fn` en construccion, no dentro del step | Fase 2: _step factory y build_*_pipeline |
+| **Visualizacion en UI** | `PipelineObserver` (Protocol): `on_step_start/end/skipped/progress`; `RichPipelineObserver` implementa con Rich Progress, spinner y barra por step | Fase 2: PipelineObserver + RichPipelineObserver |
+| **Resumability** | `PipelineState` serializa steps completados en `{stem}.wx41.json`; `Pipeline.run()` comprueba `was_done()` y restaura `ctx` con `ctx_setter` antes de saltar | Fase 2: Pipeline.run() con PipelineState |
+| **Dry run** | `Pipeline.dry_run()` retorna `list[StepDecision]` sin ejecutar ningun step; `_detect_intermediate_files` puebla `ctx` desde disco de forma pura | Fase 2: Pipeline.dry_run() puro |
+
+---
+
 ## Contexto
 
 wx41/ es la reescritura limpia de wx4/ que elimina deuda tecnica acumulada:
