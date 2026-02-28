@@ -124,6 +124,9 @@ class MediaOrchestrator:
         ctx = PipelineContext(
             src=src,
             force=self._config.force,
+            language=self._config.language,
+            speakers=self._config.speakers,
+            compress_ratio=self._config.compress_ratio,
         )
         pipeline = build_audio_pipeline(self._config, self._observers)
         return pipeline.run(ctx)

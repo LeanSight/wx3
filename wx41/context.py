@@ -12,6 +12,8 @@ class PipelineConfig:
     skip_normalize: bool = False
     compress_ratio: Optional[float] = None
     force: bool = False
+    language: Optional[str] = None
+    speakers: Optional[int] = None
 
     # Los steps publican sus propios configs
     transcribe: Optional["TranscribeConfig"] = None
