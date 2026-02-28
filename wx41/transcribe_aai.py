@@ -1,0 +1,74 @@
+import json
+import os
+import time
+from pathlib import Path
+from typing import Callable, Optional, Tuple
+
+
+def transcribe_assemblyai(
+    audio: Path,
+    lang: Optional[str] = None,
+    speakers: Optional[int] = None,
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+) -> Tuple[Path, Path]:
+    import assemblyai as aai
+
+    api_key = os.environ.get("ASSEMBLY_AI_KEY")
+    if not api_key:
+        raise RuntimeError("ASSEMBLY_AI_KEY env var not set")
+
+    aai.settings.api_key = api_key
+
+    config = aai.TranscriptionConfig(
+        speech_model=aai.SpeechModel.best,
+        speaker_labels=True,
+        speakers_expected=speakers,
+        language_code=lang,
+        language_detection=(lang is None),
+    )
+
+    transcript = aai.Transcriber(config=config).submit(str(audio))
+    if progress_callback:
+        progress_callback(0, 3)
+
+    _PROCESSING = {aai.TranscriptStatus.queued, aai.TranscriptStatus.processing}
+    while transcript.status in _PROCESSING:
+        time.sleep(3)
+        transcript = transcript.wait_for_completion()
+        if transcript.status == aai.TranscriptStatus.processing and progress_callback:
+            progress_callback(1, 3)
+
+    if transcript.status == aai.TranscriptStatus.error:
+        raise RuntimeError(f"AssemblyAI error: {transcript.error}")
+
+    if progress_callback:
+        progress_callback(3, 3)
+
+    words = [
+        {
+            "text": w.text,
+            "start": w.start,
+            "end": w.end,
+            "confidence": w.confidence,
+            "speaker": w.speaker,
+        }
+        for w in transcript.words
+    ]
+    json_path = audio.parent / f"{audio.stem}_timestamps.json"
+    tmp_path = json_path.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(words, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path.rename(json_path)
+
+    lines = []
+    for utt in transcript.utterances:
+        ms = utt.start
+        s = ms // 1000
+        h, rem = divmod(s, 3600)
+        m, sec = divmod(rem, 60)
+        ts = f"{h:02d}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
+        lines.append(f"[{ts}] Speaker {utt.speaker}: {utt.text}")
+
+    txt_path = audio.parent / f"{audio.stem}_transcript.txt"
+    txt_path.write_text("\n".join(lines), encoding="utf-8")
+
+    return txt_path, json_path
