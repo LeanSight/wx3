@@ -279,7 +279,10 @@ class TestPipelineResume:
         setter = MagicMock()
         updated_ctx = dataclasses.replace(ctx, srt=Path("/fake.srt"))
         step = NamedStep(
-            name="srt", fn=MagicMock(return_value=updated_ctx), output_fn=lambda c: out, ctx_setter=setter
+            name="srt",
+            fn=MagicMock(return_value=updated_ctx),
+            output_fn=lambda c: out,
+            ctx_setter=setter,
         )
         Pipeline([step]).run(ctx)
         setter.assert_not_called()
@@ -613,3 +616,91 @@ class TestStepProgressInjection:
             [NamedStep("alpha", step_a), NamedStep("beta", step_b)], callbacks=[cb]
         ).run(ctx)
         assert progress_names == ["alpha", "beta"]
+
+
+# ---------------------------------------------------------------------------
+# TestPipelineDryRun
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineDryRun:
+    def test_dry_run_returns_decisions_without_running_steps(self, tmp_path):
+        """dry_run() returns list of StepDecision without executing steps."""
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        out = tmp_path / "result.json"
+        out.write_text("{}", encoding="utf-8")
+        fn = MagicMock(return_value=ctx)
+        step = NamedStep(name="transcribe", fn=fn, output_fn=lambda c: out)
+        decisions = Pipeline([step]).dry_run(ctx)
+
+        assert len(decisions) == 1
+        assert decisions[0].name == "transcribe"
+        assert decisions[0].would_run is False
+        assert decisions[0].reason == "exists"
+        assert decisions[0].output_path == out
+        fn.assert_not_called()
+
+    def test_dry_run_returns_would_run_when_output_not_exists(self, tmp_path):
+        """dry_run() returns would_run=True when output does not exist."""
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        out = tmp_path / "result.json"
+        fn = MagicMock(return_value=ctx)
+        step = NamedStep(name="transcribe", fn=fn, output_fn=lambda c: out)
+        decisions = Pipeline([step]).dry_run(ctx)
+
+        assert len(decisions) == 1
+        assert decisions[0].would_run is True
+        assert decisions[0].reason == "not_exists"
+        fn.assert_not_called()
+
+    def test_dry_run_with_force_true_returns_would_run(self, tmp_path):
+        """dry_run() with force=True returns would_run=True even if output exists."""
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = dataclasses.replace(_ctx(tmp_path), force=True)
+        out = tmp_path / "result.json"
+        out.write_text("{}", encoding="utf-8")
+        fn = MagicMock(return_value=ctx)
+        step = NamedStep(name="transcribe", fn=fn, output_fn=lambda c: out)
+        decisions = Pipeline([step]).dry_run(ctx)
+
+        assert decisions[0].would_run is True
+        assert decisions[0].reason == "force"
+
+    def test_dry_run_no_output_fn_always_runs(self, tmp_path):
+        """dry_run() returns would_run=True for steps without output_fn."""
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        fn = MagicMock(return_value=ctx)
+        step = NamedStep(name="cache_check", fn=fn)
+        decisions = Pipeline([step]).dry_run(ctx)
+
+        assert decisions[0].would_run is True
+        assert decisions[0].reason == "no_output_fn"
+
+    def test_dry_run_multiple_steps_mixed_decisions(self, tmp_path):
+        """dry_run() returns correct decisions for multiple steps."""
+        from wx4.pipeline import NamedStep, Pipeline
+
+        ctx = _ctx(tmp_path)
+        out1 = tmp_path / "exists.json"
+        out1.write_text("{}", encoding="utf-8")
+        out2 = tmp_path / "not_exists.json"
+
+        def step_fn(c):
+            return c
+
+        step1 = NamedStep(name="skip_this", fn=step_fn, output_fn=lambda c: out1)
+        step2 = NamedStep(name="run_this", fn=step_fn, output_fn=lambda c: out2)
+        decisions = Pipeline([step1, step2]).dry_run(ctx)
+
+        assert len(decisions) == 2
+        assert decisions[0].name == "skip_this"
+        assert decisions[0].would_run is False
+        assert decisions[1].name == "run_this"
+        assert decisions[1].would_run is True

@@ -11,6 +11,16 @@ from wx4.context import PipelineConfig, PipelineContext, Step
 
 
 @dataclass
+class StepDecision:
+    """Result of dry_run() - represents what would happen for a single step."""
+
+    name: str
+    would_run: bool
+    output_path: Optional[Path]
+    reason: str  # "exists", "not_exists", "force", "no_output_fn"
+
+
+@dataclass
 class NamedStep:
     """Wraps a step function with a name and optional output path declaration."""
 
@@ -72,7 +82,9 @@ class Pipeline:
                     else getattr(step, "__name__", repr(step))
                 )
                 # Inject a per-step progress forwarder so steps can report chunk progress
-                ctx = dataclasses.replace(ctx, step_progress=self._make_step_progress(name))
+                ctx = dataclasses.replace(
+                    ctx, step_progress=self._make_step_progress(name)
+                )
                 for cb in self.callbacks:
                     cb.on_step_start(name, ctx)
                 ctx = step(ctx)
@@ -83,6 +95,78 @@ class Pipeline:
                 cb.on_pipeline_end(ctx)
 
         return ctx
+
+    def dry_run(self, ctx: PipelineContext) -> List[StepDecision]:
+        """
+        Simulate pipeline execution without running steps.
+        Returns a list of StepDecision for each step.
+        """
+        decisions: List[StepDecision] = []
+
+        from wx4.steps import cache_check_step
+
+        cache_check_step_fn = None
+        for step in self.steps:
+            if hasattr(step, "fn") and step.fn is cache_check_step:
+                cache_check_step_fn = step
+                break
+
+        if cache_check_step_fn is not None:
+            ctx = cache_check_step_fn(ctx)
+
+        for step in self.steps:
+            name = (
+                step.name
+                if isinstance(step, NamedStep)
+                else getattr(step, "__name__", repr(step))
+            )
+
+            out = step.output_path(ctx) if isinstance(step, NamedStep) else None
+
+            if out is None:
+                decisions.append(
+                    StepDecision(
+                        name=name,
+                        would_run=True,
+                        output_path=None,
+                        reason="no_output_fn",
+                    )
+                )
+                continue
+
+            if name == "cache_check":
+                decisions.append(
+                    StepDecision(
+                        name=name,
+                        would_run=True,
+                        output_path=None,
+                        reason="no_output_fn",
+                    )
+                )
+                continue
+
+            would_run = not out.exists() or ctx.force
+            reason = (
+                "force" if ctx.force else ("exists" if out.exists() else "not_exists")
+            )
+
+            decisions.append(
+                StepDecision(
+                    name=name,
+                    would_run=would_run,
+                    output_path=out,
+                    reason=reason,
+                )
+            )
+
+            if (
+                would_run
+                and isinstance(step, NamedStep)
+                and step.ctx_setter is not None
+            ):
+                ctx = step.ctx_setter(ctx, out)
+
+        return decisions
 
 
 # Output path lambdas for build_steps() - usa constantes de context.py
@@ -148,23 +232,56 @@ def build_steps(config: PipelineConfig | None = None) -> List[NamedStep]:
     if not config.skip_enhance:
         steps.append(NamedStep("cache_check", cache_check_step))
         if not config.skip_normalize:
-            steps.append(NamedStep("normalize", normalize_step, _NORMALIZE_OUT,
-                ctx_setter=lambda ctx, p: _dc.replace(ctx, normalized=p)))
-        steps.append(NamedStep("enhance", enhance_step, _ENHANCE_OUT,
-            ctx_setter=lambda ctx, p: _dc.replace(ctx, enhanced=p)))
+            steps.append(
+                NamedStep(
+                    "normalize",
+                    normalize_step,
+                    _NORMALIZE_OUT,
+                    ctx_setter=lambda ctx, p: _dc.replace(ctx, normalized=p),
+                )
+            )
+        steps.append(
+            NamedStep(
+                "enhance",
+                enhance_step,
+                _ENHANCE_OUT,
+                ctx_setter=lambda ctx, p: _dc.replace(ctx, enhanced=p),
+            )
+        )
         steps.append(NamedStep("cache_save", cache_save_step))
 
-    steps.append(NamedStep("transcribe", transcribe_step, _transcript_json,
-        ctx_setter=lambda ctx, p: _dc.replace(ctx, transcript_json=p)))
-    steps.append(NamedStep("srt", srt_step, _srt_out,
-        ctx_setter=lambda ctx, p: _dc.replace(ctx, srt=p)))
+    steps.append(
+        NamedStep(
+            "transcribe",
+            transcribe_step,
+            _transcript_json,
+            ctx_setter=lambda ctx, p: _dc.replace(ctx, transcript_json=p),
+        )
+    )
+    steps.append(
+        NamedStep(
+            "srt", srt_step, _srt_out, ctx_setter=lambda ctx, p: _dc.replace(ctx, srt=p)
+        )
+    )
 
     if config.videooutput:
-        steps.append(NamedStep("video", video_step, _video_out,
-            ctx_setter=lambda ctx, p: _dc.replace(ctx, video_out=p)))
+        steps.append(
+            NamedStep(
+                "video",
+                video_step,
+                _video_out,
+                ctx_setter=lambda ctx, p: _dc.replace(ctx, video_out=p),
+            )
+        )
 
     if config.compress_ratio is not None:
-        steps.append(NamedStep("compress", compress_step, _COMPRESS_OUT,
-            ctx_setter=lambda ctx, p: _dc.replace(ctx, video_compressed=p)))
+        steps.append(
+            NamedStep(
+                "compress",
+                compress_step,
+                _COMPRESS_OUT,
+                ctx_setter=lambda ctx, p: _dc.replace(ctx, video_compressed=p),
+            )
+        )
 
     return steps

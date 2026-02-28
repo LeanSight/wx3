@@ -259,6 +259,76 @@ class RichProgressCallback:
             self._console.print(self._render_tree())
 
 
+def _run_dry_run(
+    console: Console,
+    files: List,
+    steps: List,
+    srt_mode: str,
+    language: Optional[str],
+    speakers: Optional[int],
+    speaker_names: Dict[str, str],
+    force: bool,
+    compress: Optional[float],
+    backend: str,
+    hf_token: Optional[str],
+    device: str,
+    whisper_model: str,
+) -> None:
+    from wx4.context import PipelineContext
+    from wx4.pipeline import Pipeline
+    from rich.table import Table
+
+    console.print("[bold]Dry Run Mode[/bold] - Simulating execution without changes\n")
+
+    results = []
+    for src in files:
+        if not src.exists():
+            console.print(f"[red]File not found: {src}[/red]")
+            continue
+
+        pipeline_ctx = PipelineContext(
+            src=src,
+            srt_mode=srt_mode,
+            language=language,
+            speakers=speakers,
+            speaker_names=speaker_names,
+            force=force,
+            compress_ratio=compress,
+            transcribe_backend=backend,
+            hf_token=hf_token,
+            device=device,
+            whisper_model=whisper_model,
+        )
+
+        pipeline = Pipeline(steps)
+        decisions = pipeline.dry_run(pipeline_ctx)
+
+        results.append((src, decisions))
+
+    table = Table(title="Dry Run Results", box=box.ASCII)
+    table.add_column("File")
+    table.add_column("Step")
+    table.add_column("Would Run")
+    table.add_column("Reason")
+    table.add_column("Output")
+
+    for src, decisions in results:
+        for i, decision in enumerate(decisions):
+            if i == 0:
+                file_name = src.name
+            else:
+                file_name = ""
+            table.add_row(
+                file_name,
+                decision.name,
+                "[green]Yes[/green]" if decision.would_run else "[dim]No[/dim]",
+                decision.reason,
+                str(decision.output_path.name) if decision.output_path else "-",
+            )
+
+    console.print(table)
+
+
 @app.command()
 def main(
     ctx: typer.Context,
@@ -286,6 +356,9 @@ def main(
         False, "--no-enhance", help="Skip ClearVoice audio enhancement"
     ),
     force: bool = typer.Option(False, "--force", help="Force re-process cached files"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Simulate execution without making changes"
+    ),
     videooutput: bool = typer.Option(
         False, "--video-output", help="Generate output MP4"
     ),
@@ -342,13 +415,30 @@ def main(
 
     hf_token = _get_secret(hf_token, "HF_TOKEN")
 
-    # ClearVoice se carga de forma lazy dentro de enhance_step, no aqui
-
     results = []
-    # Progress para step progress
     progress = _make_progress(console)
     cb = RichProgressCallback(console, progress)
     pipeline = Pipeline(steps, callbacks=[cb])
+
+    if dry_run:
+        _run_dry_run(
+            console,
+            files,
+            steps,
+            srt_mode,
+            language,
+            speakers,
+            speaker_names,
+            force,
+            compress,
+            backend,
+            hf_token,
+            device,
+            whisper_model,
+        )
+        return
+
+    # ClearVoice se carga de forma lazy dentro de enhance_step, no aqui
 
     for src in files:
         if not src.exists():
