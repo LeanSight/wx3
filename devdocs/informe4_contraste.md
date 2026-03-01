@@ -18,8 +18,10 @@ Fecha: 2026-02-28
 - El pipeline es dinamico: builder decide que steps incluir segun config
 
 ### Objetivo 3: Visualizacion en una UI
-- Interfaz grafica para ver el pipeline
-- No solo graficos generados, sino UI interactiva
+- Arbol jerarquico de:
+  - Archivos (inputs/outputs)
+  - Steps (lista de steps configurados)
+  - Progreso actual (done/pending/running)
 
 ### Objetivo 4: Resumability
 - Reanudar desde donde se corto
@@ -39,7 +41,7 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | DAG automatico por parametros |
 | **Declarativo/Modularidad** | ❌ | No tiene StepConfig propio. Parametros sueltos, no hay "step transcribe" con su config. No permite activacion/desactivacion dinamica. |
-| **Visualizacion UI** | ⚠️ | Solo grafico estatico, no UI interactiva |
+| **Visualizacion UI** | ❌ | No tiene arbol archivos/steps/progreso |
 | **Resumability** | ⚠️ | Cache pero no detecta archivos existentes del pipeline |
 | **Dry run** | ❌ | No tiene |
 
@@ -53,7 +55,7 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | `@pipe.step(to="x")` |
 | **Declarativo/Modularidad** | ❌ | No hay StepConfig. State es unico, no hay config por step. No permite activar/desactivar steps dinamicamente. |
-| **Visualizacion UI** | ❌ | No tiene UI |
+| **Visualizacion UI** | ❌ | No tiene |
 | **Resumability** | ❌ | No tiene |
 | **Dry run** | ❌ | No tiene |
 
@@ -81,7 +83,7 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | `piper << Stage()` |
 | **Declarativo/Modularidad** | ⚠️ | Tiene Stage con parametros, pero no hay StepConfig separado. Parametros van en el constructor del Stage. |
-| **Visualizacion UI** | ✅ | UI integrada |
+| **Visualizacion UI** | ⚠️ | UI pero no especificamente arbol archivos/steps/progreso |
 | **Resumability** | ⚠️ | Cache pero no resume desde archivo existente |
 | **Dry run** | ✅ | `--dry-run` |
 
@@ -149,10 +151,10 @@ Fecha: 2026-02-28
 
 | Libreria | Declarativo/Modularidad | Visualizacion | Resumability | Dry run |
 |----------|------------------------|---------------|--------------|---------|
-| pipefunc | ❌ No StepConfig | ⚠️ Grafico | ⚠️ Cache | ❌ |
+| pipefunc | ❌ No StepConfig | ❌ | ⚠️ Cache | ❌ |
 | justpipe | ❌ No StepConfig | ❌ | ❌ | ❌ |
 | pypyr | ⚠️ YAML global | ❌ | ❌ | ✅ |
-| pipelime | ⚠️ En Stage | ✅ | ⚠️ Cache | ✅ |
+| pipelime | ⚠️ En Stage | ⚠️ UI basica | ⚠️ Cache | ✅ |
 | pipeco | ⚠️ En clase | ❌ | ❌ | ❌ |
 | dynapipeline | ❌ No StepConfig | ❌ | ❌ | ❌ |
 | dynaflow | ❌ No StepConfig | ❌ | ❌ | ❌ |

@@ -24,7 +24,7 @@ Implementacion actual en `wx41/` cumple parcialmente los objetivos. Aqui estan l
 
 ### Objetivo 3: Visualizacion en una UI
 - ❌ No hay UI
-- ❌ No hay grafico interactivo
+- ❌ No hay arbol de archivos, steps ni progreso
 
 ### Objetivo 4: Resumability
 - ✅ Check archivos existentes
@@ -41,18 +41,36 @@ Implementacion actual en `wx41/` cumple parcialmente los objetivos. Aqui estan l
 
 ### Brecha 1: Sin Visualizacion UI
 
-**Estado actual:** No hay forma de ver el pipeline graficamente.
+**Estado actual:** No hay forma de ver el estado del pipeline.
+
+**Nueva definicion (simpler):**
+- Solo un Arbol Jerarquico de:
+  - Archivos (inputs/outputs)
+  - Steps (lista de steps configurados)
+  - Progreso actual (cual ejecuto, cual falta)
 
 **Que falta:**
-- UI para mostrar steps y conexiones
-- Indicador de progreso en tiempo real
-- Estado de cada step (pending, running, done, failed)
+- Mostrar estructura de archivos generados
+- Mostrar lista de steps y su configuracion
+- Mostrar progreso (done/pending/running)
 
-**Alternativas para implementar:**
-- Graphviz para generar imagen estatica
-- Rich/TUI para terminal interactiva
-- Flask/FastAPI para web UI
-- Integracion con herramienta externa
+**Como implementar:**
+```python
+def visualize(ctx: PipelineContext, steps: List[NamedStep]):
+    print("=== Pipeline Visualization ===")
+    print(f"Source: {ctx.src}")
+    print(f"Force: {ctx.force}")
+    
+    print("\n--- Steps ---")
+    for step in steps:
+        status = "done" if step.name in ctx.outputs else "pending"
+        print(f"  [{status}] {step.name}")
+    
+    print("\n--- Outputs ---")
+    for name, path in ctx.outputs.items():
+        exists = "✓" if path.exists() else "✗"
+        print(f"  {name}: {path} {exists}")
+```
 
 ---
 
@@ -137,8 +155,10 @@ class PipelineState:
 - Validar configuracion
 
 ### Fase 2: Visualizacion (Alta prioridad)
-- Agregar metodo `visualize()` que genere grafo
-- Opcional: UI con Rich/TUI
+- Agregar metodo `visualize()` que muestre:
+  - Arbol de archivos
+  - Lista de steps
+  - Progreso actual (done/pending)
 
 ### Fase 3: Resumability Completo (Media prioridad)
 - Implementar PipelineState persistente
