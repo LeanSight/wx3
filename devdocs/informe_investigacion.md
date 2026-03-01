@@ -30,6 +30,110 @@ Se investigaron 13 librerías de pipelines en Python para determinar la más ade
 
 ---
 
+## Evaluacion Detallada vs plan_wx41.md
+
+### Criterios de plan_wx41.md
+
+| Criterio | Requisito | Evaluacion |
+|----------|------------|------------|
+| **PipelineContext** | `outputs: Dict[str, Path]` | Solo custom wx41 |
+| **PipelineConfig** | `settings: Dict[str, Any]` | Custom + YAML libs |
+| **StepConfig** | Dataclass propio por step | Solo custom wx41 |
+| **output_keys** | En config, no hardcodeado | Solo custom wx41 |
+| **Inmutabilidad** | `frozen=True` | Solo custom wx41 |
+| **Busqueda por nombre** | `ctx.outputs.get("x")` | Solo custom wx41 |
+| **Dinamismo** | Builder decide steps por settings | Solo custom wx41 |
+
+---
+
+## Ejemplos de Codigo por Libreria
+
+### Custom wx41 (cumple todos los criterios de plan_wx41)
+
+```python
+# PipelineContext con outputs dict
+@dataclass(frozen=True)
+class PipelineContext:
+    src: Path
+    outputs: Dict[str, Path] = field(default_factory=dict)
+    timings: Dict[str, float] = field(default_factory=dict)
+
+# StepConfig con output_keys
+@dataclass(frozen=True)
+class TranscribeConfig:
+    backend: str = "assemblyai"
+    output_keys: Tuple[str, str] = ("transcript_txt", "transcript_json")
+
+# Step busca input por nombre
+def transcribe_step(ctx, config):
+    audio = ctx.outputs.get("normalized") or ctx.src
+    new_outputs = {**ctx.outputs, config.output_keys[0]: txt}
+    return dataclasses.replace(ctx, outputs=new_outputs)
+```
+
+### pipefunc (DAG automatico)
+
+```python
+@pipefunc(output_name="transcript")
+def transcribe(audio_path: Path) -> Path:
+    ...
+
+# DAG automatico por parametros
+pipeline = Pipeline([normalize, transcribe])
+result = pipeline("transcript", audio_path=src)
+# NO hay PipelineContext, NO hay output_keys, NO hay inmutabilidad
+```
+
+### pypyr (YAML declarativo)
+
+```yaml
+# pipeline.yaml
+steps:
+  - name: wx41.normalize
+    skip: false
+  - name: wx41.transcribe
+    skip: false
+```
+
+```python
+# YAML a dict
+context = {"audio_path": "audio.m4a"}
+pipeline.run(context)
+# NO hay PipelineContext, NO hay StepConfig, NO hay output_keys
+```
+
+### justpipe (State + eventos)
+
+```python
+@dataclass
+class State:
+    audio_path: Path = None
+    transcript: Path = None
+
+@pipe.step(to="transcribe")
+def normalize(state):
+    state.normalized = state.audio_path
+
+pipe = Pipe()
+# NO hay PipelineContext, NO hay StepConfig, NO hay inmutabilidad
+```
+
+---
+
+## Tabla de Cumplimiento vs plan_wx41
+
+| Criterio plan_wx41 | Custom | pipefunc | justpipe | pypyr | pipelime |
+|--------------------|--------|----------|----------|-------|----------|
+| outputs: Dict | ✅ | ❌ | ❌ | ❌ | ❌ |
+| settings: Dict | ✅ | ❌ | ❌ | YAML | YAML |
+| StepConfig dataclass | ✅ | ❌ | ❌ | ❌ | ❌ |
+| output_keys en config | ✅ | ❌ | ❌ | ❌ | ❌ |
+| frozen=True | ✅ | ❌ | ❌ | ❌ | ❌ |
+| busca por nombre | ✅ | ❌ | ❌ | ❌ | ❌ |
+| dinamico por settings | ✅ | ❌ | ❌ | YAML | YAML |
+
+---
+
 ## Librerías Investigadas
 
 ### Implementadas con S1 (Walking Skeleton)
@@ -142,6 +246,18 @@ Se investigaron 13 librerías de pipelines en Python para determinar la más ade
 3. **Librerías declarativas (pypyr, pipelime)**: Cumplen declarativo y dry-run pero no tienen el modelo de PipelineContext con outputs dict.
 
 4. **Custom wx41**: Cumple arquitectura (StepConfig, output_keys, PipelineContext inmutable) pero carece de visualización y dry-run.
+
+### Evaluacion vs Decisiones Tecnicas de plan_wx41
+
+plan_wx41.md establece:
+
+| Decision Tecnica | Requisito | Custom wx41 | pipefunc | pypyr |
+|-----------------|------------|-------------|----------|-------|
+| NamedStep generico | `fn: Callable[[Ctx], Ctx]` | ✅ | ❌ | ❌ |
+| Context Setter | `output_fn` registra en outputs | ✅ | ❌ | ❌ |
+| Inmutabilidad | `frozen=True` | ✅ | ❌ | ❌ |
+| Step busca input por nombre | `ctx.outputs.get("x")` | ✅ | ❌ | ❌ |
+| Step registra por nombre | `ctx.outputs["x"] = y` | ✅ | ❌ | ❌ |
 
 ### Recomendacion
 
