@@ -24,7 +24,7 @@ Implementacion actual en `wx41/` cumple parcialmente los objetivos. Aqui estan l
 
 ### Objetivo 3: Visualizacion en una UI
 - ❌ No hay UI
-- ❌ No hay arbol de archivos, steps ni progreso
+- ❌ No muestra: archivo procesado, progreso global, step actual, feedback visual
 
 ### Objetivo 4: Resumability
 - ✅ Check archivos existentes
@@ -43,33 +43,48 @@ Implementacion actual en `wx41/` cumple parcialmente los objetivos. Aqui estan l
 
 **Estado actual:** No hay forma de ver el estado del pipeline.
 
-**Nueva definicion (simpler):**
-- Solo un Arbol Jerarquico de:
-  - Archivos (inputs/outputs)
-  - Steps (lista de steps configurados)
-  - Progreso actual (cual ejecuto, cual falta)
+**Nueva definicion:** La UI debe mostrar:
+- **Archivo procesado**: archivo actual en proceso
+- **Progreso global**: % de steps completados
+- **Step**: nombre del step actual
+- **Progreso del step**: indicadores de progreso
+- **Feedback visual**: logs, colores, iconos, progreso en tiempo real
 
 **Que falta:**
-- Mostrar estructura de archivos generados
-- Mostrar lista de steps y su configuracion
+- Mostrar archivo procesado actualmente
+- Mostrar progreso global (X/Y steps)
+- Mostrar step en ejecucion
+- Feedback visual en tiempo real
 - Mostrar progreso (done/pending/running)
 
 **Como implementar:**
 ```python
-def visualize(ctx: PipelineContext, steps: List[NamedStep]):
+def visualize(ctx: PipelineContext, steps: List[NamedStep], current_step: str = None, progress_percent: float = None):
     print("=== Pipeline Visualization ===")
-    print(f"Source: {ctx.src}")
-    print(f"Force: {ctx.force}")
     
+    # Archivo procesado
+    print(f"Archivo: {ctx.src}")
+    
+    # Progreso global
+    completed = len(ctx.outputs)
+    total = len(steps)
+    percent = (completed / total * 100) if total > 0 else 0
+    print(f"Progreso: {percent:.0f}% ({completed}/{total})")
+    
+    # Step actual
+    if current_step:
+        print(f"Ejecutando: {current_step} ({progress_percent:.0f}%)")
+    
+    # Lista de steps
     print("\n--- Steps ---")
-    for step in steps:
-        status = "done" if step.name in ctx.outputs else "pending"
-        print(f"  [{status}] {step.name}")
-    
-    print("\n--- Outputs ---")
-    for name, path in ctx.outputs.items():
-        exists = "✓" if path.exists() else "✗"
-        print(f"  {name}: {path} {exists}")
+    for i, step in enumerate(steps):
+        if step.name in ctx.outputs:
+            status = "✓ done"
+        elif step.name == current_step:
+            status = "→ running"
+        else:
+            status = "○ pending"
+        print(f"  {status} {step.name}")
 ```
 
 ---

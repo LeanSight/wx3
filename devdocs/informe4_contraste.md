@@ -18,10 +18,12 @@ Fecha: 2026-02-28
 - El pipeline es dinamico: builder decide que steps incluir segun config
 
 ### Objetivo 3: Visualizacion en una UI
-- Arbol jerarquico de:
-  - Archivos (inputs/outputs)
-  - Steps (lista de steps configurados)
-  - Progreso actual (done/pending/running)
+La UI debe mostrar:
+- **Archivo procesado**: archivo actual en proceso
+- **Progreso global**: % de steps completados
+- **Step**: nombre del step actual
+- **Progreso del step**: indicadores de progreso (ej: "transcribing... 45%")
+- **Feedback visual**: logs, colores, iconos, progreso en tiempo real
 
 ### Objetivo 4: Resumability
 - Reanudar desde donde se corto
@@ -41,11 +43,11 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | DAG automatico por parametros |
 | **Declarativo/Modularidad** | ❌ | No tiene StepConfig propio. Parametros sueltos, no hay "step transcribe" con su config. No permite activacion/desactivacion dinamica. |
-| **Visualizacion UI** | ❌ | No tiene (solo custom wx41 tiene arquitectura para implementarlo) |
+| **Visualizacion UI** | ⚠️ | Tiene `profile=True` que muestra timing, pero NO muestra: archivo procesado, progreso global, step actual, progreso del step, feedback visual en tiempo real. |
 | **Resumability** | ⚠️ | Cache pero no detecta archivos existentes del pipeline |
 | **Dry run** | ❌ | No tiene |
 
-**Brecha:** No hay modularidad - cada funcion recibe parametros sueltos, no hay StepConfig.
+**Brecha:** No hay modularidad + UI incompleta.
 
 ---
 
@@ -55,11 +57,11 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | `@pipe.step(to="x")` |
 | **Declarativo/Modularidad** | ❌ | No hay StepConfig. State es unico, no hay config por step. No permite activar/desactivar steps dinamicamente. |
-| **Visualizacion UI** | ❌ | No tiene |
+| **Visualizacion UI** | ⚠️ | Tiene eventos (`EventType`) que pueden alimentar una UI externa, pero NO tiene UI propia. No muestra archivo procesado, progreso global, step actual, feedback visual. |
 | **Resumability** | ❌ | No tiene |
 | **Dry run** | ❌ | No tiene |
 
-**Brecha:** No hay modularidad - State es plano, no hay configuracion por step.
+**Brecha:** No hay modularidad + no hay UI.
 
 ---
 
@@ -69,11 +71,11 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | YAML secuencial |
 | **Declarativo/Modularidad** | ⚠️ | YAML permite activar/desactivar (`skip`), pero no hay StepConfig Python. Cada step es una funcion, no un modulo con config propio. |
-| **Visualizacion UI** | ❌ | No tiene |
+| **Visualizacion UI** | ❌ | No tiene UI. Solo logs en stdout. No muestra archivo procesado, progreso global, step actual, feedback visual. |
 | **Resumability** | ❌ | No tiene |
 | **Dry run** | ✅ | `pypyr --dry-run` |
 
-**Brecha:** No hay StepConfig propio por step. Configuracion es global del pipeline, no por step.
+**Brecha:** No hay modularidad + no hay UI.
 
 ---
 
@@ -83,11 +85,11 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | `piper << Stage()` |
 | **Declarativo/Modularidad** | ⚠️ | Tiene Stage con parametros, pero no hay StepConfig separado. Parametros van en el constructor del Stage. |
-| **Visualizacion UI** | ⚠️ | UI pero no especificamente arbol archivos/steps/progreso |
+| **Visualizacion UI** | ❌ | No tiene UI propia. Solo CLI con logs. No muestra archivo procesado, progreso global, step actual, feedback visual. |
 | **Resumability** | ⚠️ | Cache pero no resume desde archivo existente |
 | **Dry run** | ✅ | `--dry-run` |
 
-**Brecha:** No hay StepConfig desacoplado. Configuracion mezclada con Stage.
+**Brecha:** No hay modularidad + no hay UI.
 
 ---
 
@@ -97,11 +99,11 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | Pipes |
 | **Declarativo/Modularidad** | ⚠️ | Step tiene atributos como config, pero es parte de la clase. No hay StepConfig separado. |
-| **Visualizacion UI** | ❌ | No tiene |
+| **Visualizacion UI** | ❌ | No tiene UI. No muestra archivo procesado, progreso global, step actual, feedback visual. |
 | **Resumability** | ❌ | No tiene |
 | **Dry run** | ❌ | No tiene |
 
-**Brecha:** API inestable, muy nueva. No hay StepConfig separado.
+**Brecha:** API inestable + no hay modularidad + no hay UI.
 
 ---
 
@@ -111,11 +113,11 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | StageGroup + ExecutionStrategy |
 | **Declarativo/Modularidad** | ❌ | No hay StepConfig. Stages son clases, parametros en constructor. No hay activacion/desactivacion dinamica. |
-| **Visualizacion UI** | ❌ | No tiene |
+| **Visualizacion UI** | ❌ | No tiene UI. No muestra archivo procesado, progreso global, step actual, feedback visual. |
 | **Resumability** | ❌ | No tiene |
 | **Dry run** | ❌ | No tiene |
 
-**Brecha:** No hay configuracion declarativa por step.
+**Brecha:** No hay modularidad + no hay UI.
 
 ---
 
@@ -125,11 +127,11 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | JSON/ASL |
 | **Declarativo/Modularidad** | ⚠️ | JSON declara flujo pero funciones son handlers externos. No hay StepConfig. |
-| **Visualizacion UI** | ❌ | No tiene |
+| **Visualizacion UI** | ❌ | No tiene UI. No muestra archivo procesado, progreso global, step actual, feedback visual. |
 | **Resumability** | ❌ | No tiene |
 | **Dry run** | ❌ | No tiene |
 
-**Brecha:** Paradigma diferente (AWS Step Functions). No hay modularidad.
+**Brecha:** Paradigma diferente + no hay modularidad + no hay UI.
 
 ---
 
@@ -139,11 +141,11 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | NamedStep + Pipeline.run() |
 | **Declarativo/Modularidad** | ✅ | **SI tiene StepConfig** (`TranscribeConfig`), **SI tiene activacion/desactivacion** (builder mira settings), **SI tiene configuracion por step**. |
-| **Visualizacion UI** | ❌ | No tiene |
+| **Visualizacion UI** | ❌ | No tiene UI. Tiene arquitectura para implementarla: `ctx.outputs`, `ctx.timings`, `step_progress` callback, pero NO muestra: archivo procesado, progreso global, step actual, feedback visual. |
 | **Resumability** | ✅ | Check archivos existentes |
 | **Dry run** | ❌ | No tiene |
 
-**Brecha:** Faltan visualizacion y dry-run.
+**Brecha:** Faltan visualizacion UI y dry-run. Pero tiene la arquitectura necesaria (outputs dict, timings, observers).
 
 ---
 
@@ -179,7 +181,7 @@ Fecha: 2026-02-28
 - ✅ Resumability
 
 **Lo que falta en custom wx41:**
-- Visualizacion UI
+- Visualizacion UI (mostrar: archivo procesado, progreso global, step actual, feedback visual)
 - Dry run
 
 **Recomendacion:** Mantener custom wx41 y agregar visualizacion + dry-run.
