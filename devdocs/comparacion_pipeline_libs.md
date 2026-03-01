@@ -1,87 +1,147 @@
-# Comparacion: Implementaciones wx41 contra objetivos de plan_wx41.md
+# Comparacion: Implementaciones S1 vs Objetivos wx41
 
-## Tabla Comparativa
+## Objetivos wx41 (plan_wx41.md)
 
-| Objetivo (plan_wx41.md) | Custom (wx41/) | pipefunc (wx41_pipefunc/) | pipeco (wx41_pipeco/) |
-|-------------------------|----------------|---------------------------|----------------------|
-| **PipelineContext** con `outputs: Dict[str, Path]` | Si (nativo) | No - parametros sueltos | No - atributos de clase |
-| **PipelineConfig** con `settings: Dict` (bolsa de StepConfigs) | Si (nativo) | No - parametros por funcion | Parcial - en Step.define() |
-| **StepConfig** propio por step | Si - TranscribeConfig | No - parametros sueltos | Parcial - atributos clase |
-| Step busca input por nombre en `ctx.outputs` | Si | No | No |
-| Step registra outputs en `ctx.outputs` por nombre | Si | No | No |
-| **Inmutabilidad** (frozen=True) | Si | No | No |
-| **NamedStep** generico `fn: Callable[[Ctx], Ctx]` | Si | No | No |
-| **Context Setter** generico (output_fn) | Si | No | No |
-| **Dinamismo**: builder mira settings para añadir steps | Si | No | No |
-| **Observers** para lifecycle events | Si | No | No |
-| **Resume/Skip** (archivos ya existen) | Soportado | Cache auto | No |
-| **Zero dependencies** | Si | pipefunc | pipeco+pydantic |
-| **Cero I/O en ctx** (solo Path) | Si | No | No |
+1. Forma mas idiomática y pythónica en 2026
+2. Encadenado de steps
+3. Activación/desactivación y configuración declarativa de steps
+4. Visualización en una UI
+5. Resumability (retoma si se detiene)
+6. Dry run (simular ejecución)
 
 ---
 
-## Detalle por Implementacion
+## Tabla Comparativa
+
+| Objetivo | Custom (wx41/) | pipefunc | justpipe | pypyr | pipelime |
+|----------|----------------|----------|----------|-------|----------|
+| **Encadenado de steps** | Si | Si (DAG) | Si | Si | Si |
+| **Configuración declarativa** | Si (settings dict) | No | No | **Si (YAML)** | **Si (YAML)** |
+| **Visualización UI** | No | Si | Si (eventos) | No | Si |
+| **Resumability** | Si | Cache auto | No | No | Cache |
+| **Dry run** | No | No | No | **Si** | **Si** |
+| **Zero dependencies** | Si | pipefunc | justpipe | pypyr+deps | pipelime+deps |
+| **Async** | No | Opcional | Si | No | No |
+| **StepConfig propio** | Si | No | No | No | No |
+| **output_keys en config** | Si | No | No | No | No |
+| **PipelineContext** | Si | No | State | Context | No |
+| **Inmutable** | Si | No | No | No | No |
+
+---
+
+## Detalle por Libreria
 
 ### 1. Custom (wx41/)
 
-Cumple todos los objetivos nativamente.
+**Pros:**
+- Cumple todos los objetivos de arquitectura
+- Zero dependencies
+- StepConfig con output_keys
+- PipelineContext inmutable
+- Resumability implementado
 
-```python
-@dataclass(frozen=True)
-class PipelineContext:
-    src: Path
-    outputs: Dict[str, Path] = field(default_factory=dict)
-
-@dataclass(frozen=True)
-class TranscribeConfig:
-    output_keys: Tuple[str, str] = ("transcript_txt", "transcript_json")
-
-def transcribe_step(ctx, config):
-    audio = ctx.outputs.get("normalized") or ctx.src
-    txt, jsn = ...
-    new_outputs = {**ctx.outputs, config.output_keys[0]: txt}
-    return dataclasses.replace(ctx, outputs=new_outputs)
-```
+**Cons:**
+- Sin visualización
+- Sin dry run
+- Mantenimiento manual
 
 ### 2. pipefunc (wx41_pipefunc/)
 
-NO cumple objetivos - enfoque diferente.
-
 ```python
-@pipefunc(output_name="normalized")
-def normalize(audio_path: Path) -> Path:
-    return audio_path
+@pipefunc(output_name="transcript")
+def transcribe(audio_path: Path) -> Path:
+    ...
 
-# El pipeline pasa parametros directamente, NO hay ctx.outputs
-pipeline = Pipeline([normalize, transcribe])
-result = pipeline("json", audio_path=src)
+pipeline = Pipeline([transcribe])
+result = pipeline("transcript", audio_path=src)
 ```
 
-**Problemas**: Sin PipelineContext, sin outputs dict, sin observers, sin resume/skip control.
+**Pros:**
+- DAG automático
+- Visualización integrada
+- Map-reduce
+- 452 stars
 
-### 3. pipeco (wx41_pipeco/)
+**Cons:**
+- Sin PipelineContext
+- Sin configuración declarativa
+- Sin dry run
 
-Parcialmente cumple - enfoque OOP diferente.
+### 3. justpipe (wx41_justpipe/)
 
 ```python
-class TranscribeStep(Step):
-    audio_in: Path  # No es ctx.outputs
-    transcript_txt: Path  # No se registra en dict
+@pipe.step(to="transcribe")
+def normalize(state):
+    ...
 
-    def run(self):
-        self.transcript_txt = txt  # Asigna a atributo
+pipe = Pipe()
 ```
 
-**Problemas**: Sin ctx.outputs, sin inmutabilidad, sin observers, muy nuevo (0.1.3).
+**Pros:**
+- Zero dependencies
+- Async-first
+- Eventos para UI
+- Moderno (Ene 2026)
+
+**Cons:**
+- Sin configuración declarativa
+- Sin resumability
+- Sin dry run
+
+### 4. pypyr (wx41_pypyr/)
+
+```yaml
+steps:
+  - name: wx41.steps.normalize
+  - name: wx41.steps.transcribe
+```
+
+**Pros:**
+- **Configuración declarativa YAML**
+- **Dry run nativo**
+- Conditional execution
+- Loop support
+
+**Cons:**
+- Muchas dependencias
+- Paradigma diferente (CLI-oriented)
+- Sin PipelineContext
+
+### 5. pipelime (wx41_pipelime/)
+
+```python
+piper = Piper()
+piper << NormalizeStage()
+piper << TranscribeStage()
+```
+
+**Pros:**
+- **Configuración declarativa YAML/JSON**
+- **Dry run**
+- **Visualización**
+- Caching
+
+**Cons:**
+- Muchas dependencias
+- Paradigma data-focused
+- Sin PipelineContext
 
 ---
 
 ## Conclusion
 
-| Criterio | Custom | pipefunc | pipeco |
-|----------|--------|----------|--------|
-| **Cumple objetivos plan_wx41** | **Si (100%)** | No (20%) | Parcial (40%) |
-| Dependencies | 0 | 1 | 2 |
-| Madurez | N/A | Alta (452 stars) | Baja (nuevo) |
+| Criterio | Custom | pipefunc | justpipe | pypyr | pipelime |
+|----------|--------|----------|----------|-------|----------|
+| **Adecuado para wx41** | **Si** | Parcial | Parcial | Parcial | Parcial |
+| **Cumple objetivos plan** | 3/6 | 2/6 | 2/6 | 3/6 | 4/6 |
+| **Recomendado** | **Si** | No | No | No | No |
 
-**Recommendation**: Mantener implementacion custom. Las librerias no cumplen los objetivos de arquitectura de wx41.
+**Ninguna librería cumple todos los objetivos de wx41.** La implementación custom es la única que:
+- Tiene StepConfig propio con output_keys
+- Usa PipelineContext con outputs dict
+- Es inmutable
+- Soporta resumability
+
+Las librerías externas cumplen objetivos parciales pero no el modelo de arquitectura de wx41.
+
+**Siguiente paso:** Investigar cómo implementar visualización y dry-run en la solución custom.
