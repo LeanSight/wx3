@@ -1,415 +1,422 @@
-# Plan S1a: Cerrar Brechas de UI + Dry Run
+# Plan S1a: Fixes + Cerrar Brechas de UI, Dry Run, Resumability, Control+C
 
 Fecha: 2026-03-01
 
-Referencia:
+Referencias:
 - devdocs/standard-atdd-tdd.md
 - devdocs/endtoendtests.md
+- devdocs/arquitectura.md
+- jamesshore.com/v2/projects/nullables/testing-without-mocks
 
 ---
 
 ## Reglas (endtoendtests.md)
 
-1. **AT usa output_keys del config**: `config.output_keys`, nunca hardcodear
-2. **Un AT por slice**: Cover todo el wiring
-3. **Ciclo ATDD**: AT RED → Unit RED → Prod GREEN → Commit
+1. **AT usa output_keys del config como fuente de verdad**: `transcribe_cfg.output_keys`, nunca hardcodear nombres de archivo
+2. **Un AT por slice**: cover todo el wiring
+3. **Ciclo ATDD**: AT RED → Unit RED → Prod GREEN → Commit + Push inmediato
 
 ---
 
 ## Estado Actual S1
 
-| Objetivo | Estado | Siguiente |
-|----------|--------|-----------|
-| Encadenado | ✅ Listo | - |
-| Declarativo/Modularidad | ✅ Listo | - |
-| Visualizacion UI | ❌ Pendiente | Implementar |
-| Resumability | ⚠️ Parcial | Mejorar |
-| Dry run | ❌ Pendiente | Implementar |
+| Objetivo | Estado | Slice |
+|----------|--------|-------|
+| Encadenado | OK | - |
+| Declarativo/Modularidad | OK | - |
+| Tests corren en CI | BLOQUEADO | Slice 0 |
+| Visualizacion UI | Pendiente | Slice 2 |
+| Resumability | Parcial | Slice 3 |
+| Dry run | Pendiente | Slice 1 |
+| Control+C graceful | Pendiente | Slice 4 |
 
 ---
 
-## Metodologia (standard-atdd-tdd.md)
+## Nota sobre el AT del Walking Skeleton
 
-Seguir ciclo:
-1. AT primero (RED)
-2. Unit tests (RED)
-3. Produccion minima (GREEN)
-4. Commit + Push inmediato
-5. Refactor si necesario
+`test_acceptance.py::test_produces_transcript_files_with_whisper` usa `audio_file`
+(audio real) y se salta en CI via `pytest.skip` cuando el fixture no existe.
+Esto sigue el patron de `endtoendtests.md`: el AT verifica comportamiento observable
+con datos reales cuando estan disponibles. Los ATs de S1a usan `tmp_path` + Nullable
+(fake_whisper via monkeypatch) porque validan wiring de features, no calidad de
+transcripcion.
+
+---
+
+## Slice 0: Fixes bloqueantes (prerequisito)
+
+3 problemas bloquean la coleccion de tests en CI.
+
+### Fix 1 — Lazy import assemblyai
+
+**Archivo:** `wx41/transcribe_aai.py`
+
+```python
+# ACTUAL (rompe coleccion si assemblyai no instalado):
+import assemblyai as aai
+
+# FIX (lazy import):
+def transcribe_assemblyai(...):
+    import assemblyai as aai
+    ...
+```
+
+### Fix 2 — Lazy imports torch/transformers
+
+**Archivo:** `wx41/transcribe_whisper.py`
+
+```python
+# ACTUAL (rompe coleccion si torch no instalado):
+import torch
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+
+# FIX (lazy imports + model_cache):
+def transcribe_whisper(..., model: str = "openai/whisper-base"):
+    import torch
+    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline as hf_pipeline
+    from wx41.model_cache import _get_model
+    ...
+```
+
+Crear `wx41/model_cache.py` portando `wx4/model_cache.py` sin cambios.
+
+### Fix 3a — test_transcribe_step.py usa audio_file innecesariamente
+
+`test_transcribe_happy_path` solo necesita un Path para `PipelineContext(src=...)`.
+
+```python
+def test_transcribe_happy_path(self, tmp_path, monkeypatch):
+    audio = tmp_path / "audio.m4a"
+    audio.touch()
+    ctx = PipelineContext(src=audio)
+    ...
+```
+
+### Fix 3b — conftest.py usa pytest.fail en lugar de pytest.skip
+
+```python
+@pytest.fixture
+def sample_audio_1m() -> Path:
+    fixture_path = Path(__file__).parent / "fixtures" / "sample_1m.m4a"
+    if not fixture_path.exists():
+        pytest.skip(f"Fixture not available: {fixture_path}")
+    return fixture_path
+```
+
+### Verificacion post-Slice 0
+
+```
+pytest wx41/tests/ -v
+```
+
+Sin fixture: `2 passed, 1 skipped`
+Con fixture: `3 passed`
+
+Commit + push.
 
 ---
 
 ## Slice 1: Dry Run
 
-### 1.1 AT (RED)
+**Archivos:** `wx41/context.py`, `wx41/pipeline.py`, `wx41/tests/test_dry_run.py`
+
+### AT (RED)
 
 ```python
 # wx41/tests/test_dry_run.py
+from pathlib import Path
+import pytest
+from wx41.pipeline import MediaOrchestrator
+from wx41.context import PipelineConfig, PipelineContext
+from wx41.steps.transcribe import TranscribeConfig
+
 def test_dry_run_no_execution(tmp_path):
-    """Dry run no debe ejecutar steps, solo mostrar que haria."""
     audio = tmp_path / "test.m4a"
     audio.touch()
-    
-    config = PipelineConfig(
-        settings={"transcribe": TranscribeConfig(backend="whisper")}
-    )
+    config = PipelineConfig(settings={"transcribe": TranscribeConfig(backend="whisper")})
     transcribe_cfg = config.settings["transcribe"]
-    
+
     orchestrator = MediaOrchestrator(config, [])
     ctx = orchestrator.run(audio, dry_run=True)
-    
-    # No debe generar archivos (usar output_keys del config)
+
     for key in transcribe_cfg.output_keys:
-        assert not (tmp_path / key).exists(), f"{key} should not exist in dry run"
-    
-    # Debe marcar como dry run
+        assert key not in ctx.outputs, f"{key} no debe estar en ctx.outputs en dry run"
     assert ctx.dry_run is True
 ```
 
-### 1.2 Produccion minima
+### Produccion minima
 
-En `context.py`:
-```python
-@dataclass(frozen=True)
-class PipelineContext:
-    src: Path
-    force: bool = False
-    outputs: Dict[str, Path] = field(default_factory=dict)
-    timings: Dict[str, float] = field(default_factory=dict)
-    step_progress: Optional[Callable] = None
-    dry_run: bool = False  # AGREGAR
-```
+`context.py`: agregar `dry_run: bool = False` a `PipelineContext`.
 
-En `pipeline.py`:
-```python
-def run(self, ctx: PipelineContext, dry_run: bool = False) -> PipelineContext:
-    ctx = dataclasses.replace(ctx, dry_run=dry_run)
-    
-    if dry_run:
-        self._log_dry_run(ctx)
-        return ctx
-    
-    # Ejecucion normal...
-```
+`pipeline.py`:
+- `Pipeline.run(ctx, dry_run=False)`: si `dry_run=True`, notifica `on_pipeline_start`, retorna sin ejecutar steps
+- `MediaOrchestrator.run(src, dry_run=False)`: propaga `dry_run` a `Pipeline.run`
 
----
-
-## Testing
-
-### Testear Rich UI
-
-```python
-import io
-from rich.console import Console
-
-console = Console(file=io.StringIO(), force_terminal=True)
-with console.capture() as capture:
-    console.print("Step: transcribe")
-output = capture.get()
-assert "transcribe" in output
-```
-
-### Testear Control+C
-
-```python
-import signal, os
-
-def test_interrupt():
-    original = signal.signal(signal.SIGINT, handler)
-    os.kill(os.getpid(), signal.SIGINT)
-    signal.signal(signal.SIGINT, original)
-```
+Commit + push.
 
 ---
 
 ## Slice 2: Visualizacion UI con Rich
 
-### 2.1 AT (RED)
+**Archivos:** `wx41/ui/__init__.py`, `wx41/ui/progress.py`, `wx41/tests/test_progress.py`, `wx41/tests/test_ui_visualization.py`
 
-```python
-# wx41/tests/test_ui_visualization.py
-def test_ui_shows_progress(tmp_path):
-    """UI debe mostrar: archivo, progreso global, step actual."""
-    audio = tmp_path / "test.m4a"
-    audio.write_bytes(b"fake audio")
-    
-    config = PipelineConfig(
-        settings={"transcribe": TranscribeConfig(backend="whisper")}
-    )
-    transcribe_cfg = config.settings["transcribe"]
-    
-    captured = io.StringIO()
-    
-    orchestrator = MediaOrchestrator(config, [])
-    
-    # Pipe progress a StringIO para capturar
-    ctx = orchestrator.run(
-        audio, 
-        progress=ProgressConsole(captured)
-    )
-    
-    output = captured.getvalue()
-    
-    # Verificar elementos (usar output_keys del config)
-    assert "test.m4a" in output
-    assert any(s in output for s in transcribe_cfg.output_keys)
-    assert "%" in output or "progress" in output.lower()
-```
+`PipelineObserver` ya existe en `pipeline.py`. `ProgressConsole` implementa ese protocol.
 
-### 2.2 Unit Test (RED)
+### Unit Test (RED)
 
 ```python
 # wx41/tests/test_progress.py
-def test_progress_console_shows_step():
-    console = ProgressConsole(io.StringIO())
-    
-    console.on_step_start("transcribe")
-    console.on_step_progress("transcribe", 50)
-    console.on_step_end("transcribe")
-    
-    output = console.get_output()
-    assert "transcribe" in output
-    assert "50" in output
+import io
+from wx41.ui.progress import ProgressConsole
+
+def test_progress_console_shows_step_name():
+    out = io.StringIO()
+    console = ProgressConsole(out)
+    console.on_pipeline_start(["transcribe"], None)
+    console.on_step_start("transcribe", None)
+    console.on_step_end("transcribe", None)
+    console.on_pipeline_end(None)
+    assert "transcribe" in out.getvalue()
 ```
 
-### 2.3 Produccion minima
+### AT (RED)
+
+```python
+# wx41/tests/test_ui_visualization.py
+import io
+from wx41.pipeline import MediaOrchestrator
+from wx41.context import PipelineConfig
+from wx41.steps.transcribe import TranscribeConfig
+from wx41.ui.progress import ProgressConsole
+
+def test_ui_shows_step_name_during_run(tmp_path, monkeypatch):
+    audio = tmp_path / "test.m4a"
+    audio.touch()
+    config = PipelineConfig(settings={"transcribe": TranscribeConfig(backend="whisper")})
+
+    def fake_whisper(src, **kw):
+        txt = src.parent / f"{src.stem}_whisper.txt"
+        jsn = src.parent / f"{src.stem}_whisper.json"
+        txt.write_text("ok", encoding="utf-8")
+        jsn.write_text("[]", encoding="utf-8")
+        return txt, jsn
+    monkeypatch.setattr("wx41.steps.transcribe.transcribe_whisper", fake_whisper)
+
+    out = io.StringIO()
+    observer = ProgressConsole(out)
+    orchestrator = MediaOrchestrator(config, [observer])
+    orchestrator.run(audio)
+
+    assert "transcribe" in out.getvalue()
+```
+
+### Produccion minima
 
 ```python
 # wx41/ui/progress.py
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+import io
+from rich.console import Console
 
 class ProgressConsole:
-    def __init__(self, console):
-        self.console = console
-        self.progress = None
-        self.tasks = {}
-    
-    def on_pipeline_start(self, steps, ctx):
-        self.progress = Progress(
-            SpinnerColumn(),
-            TextColumn("[bold]{task.description}"),
-            TimeElapsedColumn(),
-            console=self.console
-        )
-        self.progress.__enter__()
-    
-    def on_step_start(self, name):
-        if self.progress:
-            self.tasks[name] = self.progress.add_task(name, total=100)
-    
-    def on_step_progress(self, name, percent):
-        if self.progress and name in self.tasks:
-            self.progress.update(self.tasks[name], completed=percent)
-    
-    def on_step_end(self, name):
-        if self.progress and name in self.tasks:
-            self.progress.update(self.tasks[name], completed=100)
-            self.tasks[name] = None
-    
+    def __init__(self, output_stream: io.IOBase):
+        self._console = Console(file=output_stream, highlight=False)
+
+    def on_pipeline_start(self, step_names, ctx):
+        self._console.print(f"Pipeline: {step_names}")
+
+    def on_step_start(self, name, ctx):
+        self._console.print(f"  [{name}] starting")
+
+    def on_step_end(self, name, ctx):
+        self._console.print(f"  [{name}] done")
+
     def on_pipeline_end(self, ctx):
-        if self.progress:
-            self.progress.__exit__(None, None, None)
+        self._console.print("Pipeline done")
 ```
+
+Commit + push.
 
 ---
 
-## Slice 3: Resumability Mejorado
+## Slice 3: Resumability
 
-### 3.1 AT (RED)
+**Archivos:** `wx41/pipeline.py`, `wx41/tests/test_resume.py`
+
+### AT (RED)
 
 ```python
 # wx41/tests/test_resume.py
-def test_resume_from_existing_output(tmp_path):
-    """Si output existe, no debe re-ejecutar."""
+from wx41.pipeline import MediaOrchestrator
+from wx41.context import PipelineConfig
+from wx41.steps.transcribe import TranscribeConfig
+
+def test_resume_skips_existing_outputs(tmp_path, monkeypatch):
     audio = tmp_path / "test.m4a"
-    audio.write_bytes(b"fake")
-    
-    config = PipelineConfig(
-        settings={"transcribe": TranscribeConfig(backend="whisper")}
-    )
+    audio.touch()
+    config = PipelineConfig(settings={"transcribe": TranscribeConfig(backend="whisper")})
     transcribe_cfg = config.settings["transcribe"]
-    
-    # Output previo existe (usar output_keys)
-    prev_output = tmp_path / transcribe_cfg.output_keys[0]
-    prev_output.write_text("previous result")
-    
+
+    call_count = {"n": 0}
+    def fake_whisper(src, **kw):
+        call_count["n"] += 1
+        txt = src.parent / f"{src.stem}_whisper.txt"
+        jsn = src.parent / f"{src.stem}_whisper.json"
+        txt.write_text("original", encoding="utf-8")
+        jsn.write_text("[]", encoding="utf-8")
+        return txt, jsn
+    monkeypatch.setattr("wx41.steps.transcribe.transcribe_whisper", fake_whisper)
+
     orchestrator = MediaOrchestrator(config, [])
-    
-    # Ejecutar con resume
-    ctx = orchestrator.run(audio, resume=True)
-    
-    # Debe usar el output existente
-    assert ctx.outputs[transcribe_cfg.output_keys[0]].read_text() == "previous result"
-    
-    # No debe haber ejecutado (timings vacio o solo steps completados)
-    assert "transcribe" not in ctx.timings
+
+    ctx1 = orchestrator.run(audio)
+    assert call_count["n"] == 1
+    for key in transcribe_cfg.output_keys:
+        assert ctx1.outputs[key].exists()
+
+    ctx2 = orchestrator.run(audio, resume=True)
+    assert call_count["n"] == 1, "whisper no debe ejecutarse si outputs ya existen"
+    for key in transcribe_cfg.output_keys:
+        assert ctx2.outputs[key].read_text(encoding="utf-8") == "original"
 ```
 
-### 3.2 Produccion minima
+### Produccion minima
 
-```python
-def run(self, ctx, resume=False):
-    steps_to_run = []
-    
-    for step in self._steps:
-        if resume:
-            # Check si output existe
-            output_key = getattr(step.config, 'output_keys', [step.name])[0]
-            if output_key in ctx.outputs and ctx.outputs[output_key].exists():
-                continue  # Skip, ya existe
-        
-        steps_to_run.append(step)
-    
-    # Ejecutar solo steps faltantes
-    for step in steps_to_run:
-        ctx = step.fn(ctx)
-    
-    return ctx
-```
+`pipeline.py`:
+- `Pipeline.run(ctx, resume=False)`: cuando `resume=True`, antes de cada step verifica si sus outputs existen en disco via `step.output_fn`. Si existen, salta el step y registra el path existente en `ctx.outputs`.
+- `MediaOrchestrator.run(src, resume=False)`: propaga `resume`.
+
+Commit + push.
 
 ---
 
-## Slice 4: Control+C (Graceful Interruption)
+## Slice 4: Control+C Graceful
 
-### 4.1 AT (RED)
+**Archivos:** `wx41/ui/interrupt.py`, `wx41/context.py`, `wx41/pipeline.py`, `wx41/tests/test_interrupt.py`
+
+### AT (RED)
 
 ```python
 # wx41/tests/test_interrupt.py
-def test_ctrl_c_graceful(tmp_path):
-    """Ctrl+C debe guardar estado antes de salir."""
+import signal
+import os
+import json
+from wx41.pipeline import MediaOrchestrator
+from wx41.context import PipelineConfig
+from wx41.steps.transcribe import TranscribeConfig
+
+def test_ctrl_c_marks_interrupted_and_saves_state(tmp_path, monkeypatch):
     audio = tmp_path / "test.m4a"
-    audio.write_bytes(b"fake")
-    
-    config = PipelineConfig(
-        settings={"transcribe": TranscribeConfig(backend="whisper")}
-    )
+    audio.touch()
+    config = PipelineConfig(settings={"transcribe": TranscribeConfig(backend="whisper")})
     transcribe_cfg = config.settings["transcribe"]
-    
-    orchestrator = MediaOrchestrator(config, [])
-    
-    # Simular Ctrl+C durante ejecucion
-    ctx = orchestrator.run(audio, interrupt_at=transcribe_cfg.output_keys[0])
-    
-    # Debe guardar estado
     state_file = tmp_path / ".wx41_state.json"
-    assert state_file.exists()
-    
-    # ctx debe tener flag de interrupcion
+
+    def fake_whisper(src, **kw):
+        txt = src.parent / f"{src.stem}_whisper.txt"
+        jsn = src.parent / f"{src.stem}_whisper.json"
+        txt.write_text("partial", encoding="utf-8")
+        jsn.write_text("[]", encoding="utf-8")
+        os.kill(os.getpid(), signal.SIGINT)
+        return txt, jsn
+    monkeypatch.setattr("wx41.steps.transcribe.transcribe_whisper", fake_whisper)
+
+    orchestrator = MediaOrchestrator(config, [], state_path=state_file)
+    ctx = orchestrator.run(audio)
+
     assert ctx.interrupted is True
-    
-    # Los outputs completados deben existir (usar output_keys)
+    assert state_file.exists()
+    state = json.loads(state_file.read_text(encoding="utf-8"))
     for key in transcribe_cfg.output_keys:
         if key in ctx.outputs:
+            assert key in state["outputs"], f"{key} no esta en state guardado"
             assert ctx.outputs[key].exists()
 ```
 
-### 4.2 Produccion minima
+### Produccion minima
 
+`context.py`: agregar `interrupted: bool = False` a `PipelineContext`.
+
+`wx41/ui/interrupt.py`:
 ```python
-# ui/interrupt.py
 import signal
-import sys
+import json
+from pathlib import Path
 
 class InterruptHandler:
-    def __init__(self, pipeline, ctx):
-        self.pipeline = pipeline
-        self.ctx = ctx
-        self.interrupted = False
-    
-    def handle(self, signum, frame):
-        print("\n[yellow]Interruption detected. Saving state...[/yellow]")
-        self.interrupted = True
-        
-        # Guardar estado para resume
-        self._save_state()
-        
-        # Limpiar UI
-        self.pipeline.cleanup()
-        
-        sys.exit(0)
-    
-    def _save_state(self):
-        state = {
-            "outputs": {k: str(v) for k, v in self.ctx.outputs.items()},
-            "timings": self.ctx.timings,
-            "src": str(self.ctx.src),
-        }
-        Path(".wx41_state.json").write_text(json.dumps(state))
+    def __init__(self, state_path: Path):
+        self._state_path = state_path
+        self._ctx = None
+        self._original = None
 
-def run_with_interrupt_handling(pipeline, ctx):
-    handler = InterruptHandler(pipeline, ctx)
-    
-    # Registrar handler para SIGINT (Ctrl+C)
-    signal.signal(signal.SIGINT, handler.handle)
-    
-    return pipeline.run(ctx)
+    def install(self):
+        self._original = signal.signal(signal.SIGINT, self._handle)
+
+    def uninstall(self):
+        if self._original is not None:
+            signal.signal(signal.SIGINT, self._original)
+
+    def update_ctx(self, ctx):
+        self._ctx = ctx
+
+    def _handle(self, signum, frame):
+        if self._ctx and self._state_path:
+            state = {
+                "src": str(self._ctx.src),
+                "outputs": {k: str(v) for k, v in self._ctx.outputs.items()},
+                "timings": self._ctx.timings,
+            }
+            self._state_path.write_text(
+                json.dumps(state), encoding="utf-8"
+            )
+        raise KeyboardInterrupt
 ```
 
----
+`pipeline.py` / `MediaOrchestrator`: cuando `state_path` no es None, instalar
+`InterruptHandler` antes de `pipeline.run()`, capturar `KeyboardInterrupt`,
+marcar `ctx.interrupted = True`, retornar ctx en lugar de propagar la excepcion.
 
-## Tabla de Slices
-
-| Slice | Objetivo | Tipo | Archivos a crear/modificar |
-|-------|----------|------|---------------------------|
-| 1 | Dry Run | AT + Prod | test_dry_run.py, context.py, pipeline.py |
-| 2 | UI | AT + Unit + Prod | test_ui.py, test_progress.py, ui/progress.py |
-| 3 | Resumability | AT + Prod | test_resume.py, pipeline.py |
-| 4 | Control+C | AT + Prod | test_interrupt.py, ui/interrupt.py |
+Commit + push.
 
 ---
 
-## Orden de implementacion (One-Piece-Flow)
+## Tabla de archivos
 
-1. **Slice 1**: Dry Run
-   - Escribir AT → RED
-   - Escribir produccion minima → GREEN
-   - Commit + Push
-
-2. **Slice 2**: UI
-   - Escribir AT → RED
-   - Escribir Unit Test → RED
-   - Escribir produccion minima → GREEN
-   - Commit + Push
-
-3. **Slice 3**: Resumability
-   - Escribir AT → RED
-   - Escribir produccion minima → GREEN
-   - Commit + Push
-
-4. **Slice 4**: Control+C
-   - Escribir AT → RED
-   - Escribir produccion minima → GREEN
-   - Commit + Push
+| Archivo | Slice | Accion |
+|---------|-------|--------|
+| `wx41/model_cache.py` | 0 | Crear (port de wx4/model_cache.py) |
+| `wx41/transcribe_aai.py` | 0 | Lazy import assemblyai |
+| `wx41/transcribe_whisper.py` | 0 | Lazy imports + usar model_cache |
+| `wx41/tests/test_transcribe_step.py` | 0 | tmp_path en lugar de audio_file |
+| `wx41/tests/conftest.py` | 0 | pytest.skip en lugar de pytest.fail |
+| `wx41/context.py` | 1, 4 | Agregar dry_run, interrupted |
+| `wx41/pipeline.py` | 1, 3, 4 | dry_run, resume, InterruptHandler |
+| `wx41/ui/__init__.py` | 2 | Crear vacio |
+| `wx41/ui/progress.py` | 2 | ProgressConsole |
+| `wx41/ui/interrupt.py` | 4 | InterruptHandler |
+| `wx41/tests/test_dry_run.py` | 1 | Crear |
+| `wx41/tests/test_progress.py` | 2 | Crear |
+| `wx41/tests/test_ui_visualization.py` | 2 | Crear |
+| `wx41/tests/test_resume.py` | 3 | Crear |
+| `wx41/tests/test_interrupt.py` | 4 | Crear |
 
 ---
 
-## Criterios de aceptacion
+## Verificacion final
 
-### Reglas (endtoendtests.md)
-- **Siempre usar output_keys del config**, nunca hardcodear nombres
-- Un AT por slice, cover todo el wiring
+```
+pytest wx41/tests/ -v
+```
 
-### Dry Run
-- [ ] `dry_run=True` no ejecuta steps
-- [ ] No genera archivos de output
-- [ ] `ctx.dry_run` esta en True
-- [ ] Muestra que steps ejecutaria
+Sin fixture local:
+```
+test_acceptance.py::...::test_produces_transcript_files_with_whisper SKIPPED
+test_dry_run.py::test_dry_run_no_execution PASSED
+test_interrupt.py::test_ctrl_c_marks_interrupted_and_saves_state PASSED
+test_pipeline.py::...::test_automatic_output_registration PASSED
+test_progress.py::test_progress_console_shows_step_name PASSED
+test_resume.py::test_resume_skips_existing_outputs PASSED
+test_transcribe_step.py::...::test_transcribe_happy_path PASSED
+test_ui_visualization.py::test_ui_shows_step_name_during_run PASSED
 
-### UI
-- [ ] Muestra archivo procesado
-- [ ] Muestra progreso global (X/Y)
-- [ ] Muestra step actual
-- [ ] Muestra progreso del step (%)
-- [ ] Feedback visual (spinner, barra)
-
-### Resumability
-- [ ] Si output existe, no re-ejecuta
-- [ ] Si `force=True`, siempre ejecuta
-- [ ] Si `resume=True`, usa outputs existentes
-
-### Control+C
-- [ ] Ctrl+C guarda estado antes de salir
-- [ ] Genera archivo `.wx41_state.json`
-- [ ] ctx.interrupted esta en True
-- [ ] Los outputs completados se сохраняют
-- [ ] Se puede resume desde el estado guardado
+7 passed, 1 skipped
+```
