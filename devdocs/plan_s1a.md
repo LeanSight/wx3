@@ -2,7 +2,17 @@
 
 Fecha: 2026-03-01
 
-Referencia: devdocs/standard-atdd-tdd.md
+Referencia:
+- devdocs/standard-atdd-tdd.md
+- devdocs/endtoendtests.md
+
+---
+
+## Reglas (endtoendtests.md)
+
+1. **AT usa output_keys del config**: `config.output_keys`, nunca hardcodear
+2. **Un AT por slice**: Cover todo el wiring
+3. **Ciclo ATDD**: AT RED → Unit RED → Prod GREEN → Commit
 
 ---
 
@@ -43,13 +53,14 @@ def test_dry_run_no_execution(tmp_path):
     config = PipelineConfig(
         settings={"transcribe": TranscribeConfig(backend="whisper")}
     )
+    transcribe_cfg = config.settings["transcribe"]
     
     orchestrator = MediaOrchestrator(config, [])
     ctx = orchestrator.run(audio, dry_run=True)
     
-    # No debe generar archivos
-    assert not (tmp_path / "transcript_txt").exists()
-    assert not (tmp_path / "transcript_json").exists()
+    # No debe generar archivos (usar output_keys del config)
+    for key in transcribe_cfg.output_keys:
+        assert not (tmp_path / key).exists(), f"{key} should not exist in dry run"
     
     # Debe marcar como dry run
     assert ctx.dry_run is True
@@ -122,9 +133,13 @@ def test_ui_shows_progress(tmp_path):
     audio = tmp_path / "test.m4a"
     audio.write_bytes(b"fake audio")
     
+    config = PipelineConfig(
+        settings={"transcribe": TranscribeConfig(backend="whisper")}
+    )
+    transcribe_cfg = config.settings["transcribe"]
+    
     captured = io.StringIO()
     
-    config = PipelineConfig(settings={})
     orchestrator = MediaOrchestrator(config, [])
     
     # Pipe progress a StringIO para capturar
@@ -135,9 +150,9 @@ def test_ui_shows_progress(tmp_path):
     
     output = captured.getvalue()
     
-    # Verificar elementos
+    # Verificar elementos (usar output_keys del config)
     assert "test.m4a" in output
-    assert any(s in output for s in ["normalize", "transcribe"])
+    assert any(s in output for s in transcribe_cfg.output_keys)
     assert "%" in output or "progress" in output.lower()
 ```
 
@@ -209,18 +224,22 @@ def test_resume_from_existing_output(tmp_path):
     audio = tmp_path / "test.m4a"
     audio.write_bytes(b"fake")
     
-    # Output previo existe
-    prev_output = tmp_path / "transcript_txt"
+    config = PipelineConfig(
+        settings={"transcribe": TranscribeConfig(backend="whisper")}
+    )
+    transcribe_cfg = config.settings["transcribe"]
+    
+    # Output previo existe (usar output_keys)
+    prev_output = tmp_path / transcribe_cfg.output_keys[0]
     prev_output.write_text("previous result")
     
-    config = PipelineConfig(force=False)
     orchestrator = MediaOrchestrator(config, [])
     
     # Ejecutar con resume
     ctx = orchestrator.run(audio, resume=True)
     
     # Debe usar el output existente
-    assert ctx.outputs["transcript_txt"].read_text() == "previous result"
+    assert ctx.outputs[transcribe_cfg.output_keys[0]].read_text() == "previous result"
     
     # No debe haber ejecutado (timings vacio o solo steps completados)
     assert "transcribe" not in ctx.timings
@@ -261,11 +280,15 @@ def test_ctrl_c_graceful(tmp_path):
     audio = tmp_path / "test.m4a"
     audio.write_bytes(b"fake")
     
-    config = PipelineConfig()
+    config = PipelineConfig(
+        settings={"transcribe": TranscribeConfig(backend="whisper")}
+    )
+    transcribe_cfg = config.settings["transcribe"]
+    
     orchestrator = MediaOrchestrator(config, [])
     
     # Simular Ctrl+C durante ejecucion
-    ctx = orchestrator.run(audio, interrupt_at="transcribe")
+    ctx = orchestrator.run(audio, interrupt_at=transcribe_cfg.output_keys[0])
     
     # Debe guardar estado
     state_file = tmp_path / ".wx41_state.json"
@@ -274,8 +297,10 @@ def test_ctrl_c_graceful(tmp_path):
     # ctx debe tener flag de interrupcion
     assert ctx.interrupted is True
     
-    # Los outputs completados deben existir
-    # (el step actual puede no haber terminado)
+    # Los outputs completados deben existir (usar output_keys)
+    for key in transcribe_cfg.output_keys:
+        if key in ctx.outputs:
+            assert ctx.outputs[key].exists()
 ```
 
 ### 4.2 Produccion minima
@@ -359,6 +384,10 @@ def run_with_interrupt_handling(pipeline, ctx):
 ---
 
 ## Criterios de aceptacion
+
+### Reglas (endtoendtests.md)
+- **Siempre usar output_keys del config**, nunca hardcodear nombres
+- Un AT por slice, cover todo el wiring
 
 ### Dry Run
 - [ ] `dry_run=True` no ejecuta steps
