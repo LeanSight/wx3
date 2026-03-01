@@ -1,12 +1,14 @@
 """
-wx41 Pipeco - Walking Skeleton S1
-Implementacion con pipeco library.
+wx41 Dynapipeline - Walking Skeleton S1
+Implementacion con dynapipeline library.
 """
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from pipeco import Step, Pipeline, Pipe
+from dynapipeline import PipelineFactory, PipeLineType, Stage, StageGroup
+from dynapipeline.execution import SequentialExecutionStrategy
+from dynapipeline.execution.cycle_strategies import OnceCycleStrategy
 
 
 @dataclass(frozen=True)
@@ -34,61 +36,63 @@ class TranscribeConfig:
     output_keys: Tuple[str, str] = ("transcript_txt", "transcript_json")
 
 
-class NormalizeStep(Step):
-    audio_in: Path
-    normalized: Path
-
-    def run(self):
-        self.normalized = self.audio_in
+class NormalizeStage(Stage):
+    async def execute(self, data):
+        return data
 
 
-class TranscribeStep(Step):
-    audio_in: Path
-    backend: str = "assemblyai"
-    api_key: Optional[str] = None
+class TranscribeStage(Stage):
+    def __init__(self, backend: str = "assemblyai", api_key: Optional[str] = None):
+        super().__init__()
+        self._backend = backend
+        self._api_key = api_key
 
-    transcript_txt: Path
-    transcript_json: Path
-
-    def run(self):
+    async def execute(self, data):
+        audio_path = Path(data["audio_path"])
         from wx41.transcribe_aai import transcribe_assemblyai
         from wx41.transcribe_whisper import transcribe_whisper
 
-        if self.backend == "assemblyai":
+        if self._backend == "assemblyai":
             txt, jsn = transcribe_assemblyai(
-                self.audio_in,
-                api_key=self.api_key,
+                audio_path,
+                api_key=self._api_key,
                 lang=None,
                 speakers=None,
                 progress_callback=None,
             )
-        elif self.backend == "whisper":
+        elif self._backend == "whisper":
             txt, jsn = transcribe_whisper(
-                self.audio_in,
-                api_key=self.api_key,
+                audio_path,
+                api_key=self._api_key,
                 lang=None,
                 speakers=None,
                 progress_callback=None,
                 model="openai/whisper-base",
             )
         else:
-            raise RuntimeError(f"Backend {self.backend} not implemented yet")
+            raise RuntimeError(f"Backend {self._backend} not implemented yet")
 
-        self.transcript_txt = txt
-        self.transcript_json = jsn
+        return {"transcript_txt": txt, "transcript_json": jsn}
 
 
-def build_pipeline(config: PipelineConfig) -> Pipeline:
+def build_pipeline(config: PipelineConfig):
     t_cfg = config.settings.get("transcribe", TranscribeConfig())
 
-    pipeline = Pipeline(
-        steps=[
-            NormalizeStep.define(),
-            TranscribeStep.define(backend=t_cfg.backend, api_key=t_cfg.api_key),
-        ],
-        pipes=[
-            Pipe(from_step="normalize", from_output="normalized", to_step="transcribe", to_input="audio_in"),
-        ],
+    stage1 = NormalizeStage(name="normalize")
+    stage2 = TranscribeStage(backend=t_cfg.backend, api_key=t_cfg.api_key)
+
+    group = StageGroup(
+        name="main",
+        stages=[stage1, stage2],
+        cycle_strategy=OnceCycleStrategy(),
+        execution_strategy=SequentialExecutionStrategy(),
+    )
+
+    factory = PipelineFactory()
+    pipeline = factory.create_pipeline(
+        pipeline_type=PipeLineType.SIMPLE,
+        name="wx41",
+        groups=[group],
     )
     return pipeline
 
@@ -98,7 +102,7 @@ class MediaOrchestrator:
         self._config = config
         self._observers = observers or []
 
-    def run(self, src: Path) -> PipelineContext:
+    async def run(self, src: Path) -> PipelineContext:
         import dataclasses
         ctx = PipelineContext(src=src, force=self._config.force)
 
@@ -106,11 +110,11 @@ class MediaOrchestrator:
 
         pipeline = build_pipeline(self._config)
 
-        result = pipeline.run(audio_in=src)
+        result = await pipeline.run({"audio_path": str(src)})
 
         new_outputs = {
             **ctx.outputs,
-            t_cfg.output_keys[0]: result.transcribe.transcript_txt,
-            t_cfg.output_keys[1]: result.transcribe.transcript_json,
+            t_cfg.output_keys[0]: result["transcript_txt"],
+            t_cfg.output_keys[1]: result["transcript_json"],
         }
         return dataclasses.replace(ctx, outputs=new_outputs)

@@ -14,21 +14,21 @@ Investigar 13 librerías de pipelines en Python para determinar cuál es la más
 
 ## Librerías a Investigar
 
-| # | Libreria | Tipo | Status |
-|---|----------|------|--------|
-| 1 | pipefunc | DAG function pipeline | Implementado |
-| 2 | justpipe | Async orchestration | Implementado |
-| 3 | pypyr | YAML declarative | Implementado |
-| 4 | pipelime | Data pipeline + CLI | Implementado |
-| 5 | pipeco | Pydantic-based | Pendiente |
-| 6 | pydiverse.pipedag | Data orchestration | Pendiente |
-| 7 | dynapipeline | Async pipeline | Pendiente |
-| 8 | dynaflow | ASL-based | Pendiente |
-| 9 | nextflow | Bioinformatics | Pendiente |
-| 10 | flyte | ML pipelines | Pendiente |
-| 11 | snakemake | Workflows | Pendiente |
-| 12 | dagster | Data orchestrator | Pendiente |
-| 13 | prefect | Dataflow | Pendiente |
+| # | Libreria | Tipo | Status | Score |
+|---|----------|------|--------|-------|
+| 1 | pipefunc | DAG function pipeline | Implementado | 13 |
+| 2 | justpipe | Async orchestration | Implementado | 8 |
+| 3 | pypyr | YAML declarative | Implementado | 15 |
+| 4 | pipelime | Data pipeline + CLI | Implementado | 23 |
+| 5 | pipeco | Pydantic-based | Implementado | 4 |
+| 6 | pydiverse.pipedag | Data orchestration | Cancelado (deps) | N/A |
+| 7 | dynapipeline | Async pipeline | Implementado | 5 |
+| 8 | dynaflow | ASL-based | Implementado | 9 |
+| 9 | nextflow | Bioinformatics | Cancelado (Java) | N/A |
+| 10 | flyte | ML pipelines | Cancelado (complejo) | N/A |
+| 11 | snakemake | Workflows | Cancelado (complejo) | N/A |
+| 12 | dagster | Data orchestrator | Teorico | 25 |
+| 13 | prefect | Dataflow | Teorico | 25 |
 
 ---
 
