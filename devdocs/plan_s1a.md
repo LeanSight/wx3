@@ -222,6 +222,78 @@ def run(self, ctx, resume=False):
 
 ---
 
+## Slice 4: Control+C (Graceful Interruption)
+
+### 4.1 AT (RED)
+
+```python
+# wx41/tests/test_interrupt.py
+def test_ctrl_c_graceful(tmp_path):
+    """Ctrl+C debe guardar estado antes de salir."""
+    audio = tmp_path / "test.m4a"
+    audio.write_bytes(b"fake")
+    
+    config = PipelineConfig()
+    orchestrator = MediaOrchestrator(config, [])
+    
+    # Simular Ctrl+C durante ejecucion
+    ctx = orchestrator.run(audio, interrupt_at="transcribe")
+    
+    # Debe guardar estado
+    state_file = tmp_path / ".wx41_state.json"
+    assert state_file.exists()
+    
+    # ctx debe tener flag de interrupcion
+    assert ctx.interrupted is True
+    
+    # Los outputs completados deben existir
+    # (el step actual puede no haber terminado)
+```
+
+### 4.2 Produccion minima
+
+```python
+# ui/interrupt.py
+import signal
+import sys
+
+class InterruptHandler:
+    def __init__(self, pipeline, ctx):
+        self.pipeline = pipeline
+        self.ctx = ctx
+        self.interrupted = False
+    
+    def handle(self, signum, frame):
+        print("\n[yellow]Interruption detected. Saving state...[/yellow]")
+        self.interrupted = True
+        
+        # Guardar estado para resume
+        self._save_state()
+        
+        # Limpiar UI
+        self.pipeline.cleanup()
+        
+        sys.exit(0)
+    
+    def _save_state(self):
+        state = {
+            "outputs": {k: str(v) for k, v in self.ctx.outputs.items()},
+            "timings": self.ctx.timings,
+            "src": str(self.ctx.src),
+        }
+        Path(".wx41_state.json").write_text(json.dumps(state))
+
+def run_with_interrupt_handling(pipeline, ctx):
+    handler = InterruptHandler(pipeline, ctx)
+    
+    # Registrar handler para SIGINT (Ctrl+C)
+    signal.signal(signal.SIGINT, handler.handle)
+    
+    return pipeline.run(ctx)
+```
+
+---
+
 ## Tabla de Slices
 
 | Slice | Objetivo | Tipo | Archivos a crear/modificar |
@@ -229,6 +301,7 @@ def run(self, ctx, resume=False):
 | 1 | Dry Run | AT + Prod | test_dry_run.py, context.py, pipeline.py |
 | 2 | UI | AT + Unit + Prod | test_ui.py, test_progress.py, ui/progress.py |
 | 3 | Resumability | AT + Prod | test_resume.py, pipeline.py |
+| 4 | Control+C | AT + Prod | test_interrupt.py, ui/interrupt.py |
 
 ---
 
@@ -246,6 +319,11 @@ def run(self, ctx, resume=False):
    - Commit + Push
 
 3. **Slice 3**: Resumability
+   - Escribir AT → RED
+   - Escribir produccion minima → GREEN
+   - Commit + Push
+
+4. **Slice 4**: Control+C
    - Escribir AT → RED
    - Escribir produccion minima → GREEN
    - Commit + Push
@@ -271,3 +349,10 @@ def run(self, ctx, resume=False):
 - [ ] Si output existe, no re-ejecuta
 - [ ] Si `force=True`, siempre ejecuta
 - [ ] Si `resume=True`, usa outputs existentes
+
+### Control+C
+- [ ] Ctrl+C guarda estado antes de salir
+- [ ] Genera archivo `.wx41_state.json`
+- [ ] ctx.interrupted esta en True
+- [ ] Los outputs completados se сохраняют
+- [ ] Se puede resume desde el estado guardado
