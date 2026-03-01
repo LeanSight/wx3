@@ -103,44 +103,47 @@ def test_transcribe_happy_path(self, tmp_path, monkeypatch):
     ...
 ```
 
-### 3b — test_acceptance.py usa audio real con whisper real
+### 3b — conftest.py usa pytest.fail() en lugar de pytest.skip()
 
-`test_produces_transcript_files_with_whisper(self, audio_file)` ejecuta
-inferencia real de whisper sobre un m4a real.
+El AT en `test_acceptance.py` ES el test real de punta a cabo. Segun
+`endtoendtests.md`, el ejemplo canonico usa `audio_file` con audio real:
+
+```python
+def test_produces_transcript_files(self, audio_file):
+    ctx = MediaOrchestrator(config, []).run(audio_file)
+    for key in transcribe_cfg.output_keys:
+        assert ctx.outputs[key].exists()
+```
+
+El AT no debe mockearse. Debe correr con audio real cuando el fixture existe.
+
+**El problema real no esta en el AT, sino en conftest.py:**
+```python
+# ACTUAL — mata la coleccion con pytest.fail():
+if not fixture_path.exists():
+    pytest.fail(f"Fixture no encontrado en {fixture_path}.")
+
+# CORRECTO — salta el test si no hay fixture:
+if not fixture_path.exists():
+    pytest.skip(f"Fixture no disponible: {fixture_path}")
+```
 
 **Regla (CLAUDE.md):** "There are no integration tests that require real audio
-files in CI."
+files in CI." — se cumple porque el AT se SALTA en CI. No se elimina.
 
-El AT verifica WIRING (orquestador -> pipeline -> step -> ctx.outputs),
-no la calidad de la transcripcion. No requiere audio real.
-
-**Fix:** usar `tmp_path` + Nullable de whisper via monkeypatch:
+**Fix:** cambiar `pytest.fail()` por `pytest.skip()` en `conftest.py`:
 ```python
-def test_produces_transcript_files_with_whisper(self, tmp_path, monkeypatch):
-    audio = tmp_path / "audio.m4a"
-    audio.touch()
-
-    config = PipelineConfig(settings={"transcribe": TranscribeConfig(backend="whisper")})
-    transcribe_cfg = config.settings["transcribe"]
-
-    def fake_whisper(src, **kw):
-        txt = src.parent / f"{src.stem}_whisper.txt"
-        jsn = src.parent / f"{src.stem}_whisper.json"
-        txt.write_text("hello world", encoding="utf-8")
-        jsn.write_text("[]", encoding="utf-8")
-        return txt, jsn
-
-    monkeypatch.setattr("wx41.steps.transcribe.transcribe_whisper", fake_whisper)
-
-    orchestrator = MediaOrchestrator(config, [])
-    ctx = orchestrator.run(audio)
-
-    for key in transcribe_cfg.output_keys:
-        assert key in ctx.outputs, f"{key} no esta en ctx.outputs: {ctx.outputs}"
-        assert ctx.outputs[key].exists(), f"archivo no creado: {ctx.outputs[key]}"
-        content = ctx.outputs[key].read_text(encoding="utf-8")
-        assert len(content) > 0, f"archivo vacio: {ctx.outputs[key]}"
+@pytest.fixture
+def sample_audio_1m() -> Path:
+    fixture_path = Path(__file__).parent / "fixtures" / "sample_1m.m4a"
+    if not fixture_path.exists():
+        pytest.skip(f"Fixture not available: {fixture_path}")
+    return fixture_path
 ```
+
+**Resultado:**
+- CI (sin fixture): AT se salta → `pytest` pasa con 2 passed, 1 skipped
+- Local (con fixture): AT corre real de punta a cabo con whisper real
 
 ---
 
@@ -152,7 +155,7 @@ def test_produces_transcript_files_with_whisper(self, tmp_path, monkeypatch):
 | `wx41/transcribe_aai.py` | Mover `import assemblyai as aai` dentro de la funcion |
 | `wx41/transcribe_whisper.py` | Mover imports dentro de la funcion; usar `_get_model` para el modelo |
 | `wx41/tests/test_transcribe_step.py` | Reemplazar `audio_file` por `tmp_path` + `audio.touch()` |
-| `wx41/tests/test_acceptance.py` | Reemplazar `audio_file` por `tmp_path` + Nullable de whisper |
+| `wx41/tests/conftest.py` | Cambiar `pytest.fail()` por `pytest.skip()` en `sample_audio_1m` |
 
 ---
 
@@ -164,6 +167,13 @@ pytest wx41/tests/ -v
 
 Resultado esperado:
 ```
+wx41/tests/test_acceptance.py::TestPipelineWalkingSkeleton::test_produces_transcript_files_with_whisper SKIPPED (fixture not available)
+wx41/tests/test_pipeline.py::TestPipelineGenericCore::test_automatic_output_registration PASSED
+wx41/tests/test_transcribe_step.py::TestTranscribeStepModular::test_transcribe_happy_path PASSED
+
+2 passed, 1 skipped
+
+# Con fixture local disponible (fixtures/sample_1m.m4a existe):
 wx41/tests/test_acceptance.py::TestPipelineWalkingSkeleton::test_produces_transcript_files_with_whisper PASSED
 wx41/tests/test_pipeline.py::TestPipelineGenericCore::test_automatic_output_registration PASSED
 wx41/tests/test_transcribe_step.py::TestTranscribeStepModular::test_transcribe_happy_path PASSED
