@@ -41,7 +41,7 @@ Fecha: 2026-02-28
 |----------|--------|---------|
 | **Encadenado** | ✅ | DAG automatico por parametros |
 | **Declarativo/Modularidad** | ❌ | No tiene StepConfig propio. Parametros sueltos, no hay "step transcribe" con su config. No permite activacion/desactivacion dinamica. |
-| **Visualizacion UI** | ❌ | No tiene arbol archivos/steps/progreso |
+| **Visualizacion UI** | ❌ | No tiene (solo custom wx41 tiene arquitectura para implementarlo) |
 | **Resumability** | ⚠️ | Cache pero no detecta archivos existentes del pipeline |
 | **Dry run** | ❌ | No tiene |
 
@@ -154,7 +154,7 @@ Fecha: 2026-02-28
 | pipefunc | ❌ No StepConfig | ❌ | ⚠️ Cache | ❌ |
 | justpipe | ❌ No StepConfig | ❌ | ❌ | ❌ |
 | pypyr | ⚠️ YAML global | ❌ | ❌ | ✅ |
-| pipelime | ⚠️ En Stage | ⚠️ UI basica | ⚠️ Cache | ✅ |
+| pipelime | ⚠️ En Stage | ❌ No tiene | ⚠️ Cache | ✅ |
 | pipeco | ⚠️ En clase | ❌ | ❌ | ❌ |
 | dynapipeline | ❌ No StepConfig | ❌ | ❌ | ❌ |
 | dynaflow | ❌ No StepConfig | ❌ | ❌ | ❌ |
