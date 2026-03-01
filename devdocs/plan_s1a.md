@@ -83,6 +83,75 @@ def run(self, ctx: PipelineContext, dry_run: bool = False) -> PipelineContext:
 
 ---
 
+## Testing Rich UI y Control+C
+
+### Como testar Rich UI
+
+Rich oculta progress bars cuando no detecta terminal. Para testear:
+
+```python
+# Usar force_terminal=True
+console = Console(
+    file=io.StringIO(),
+    force_terminal=True,
+    width=80,
+)
+
+# O usar Console con capture()
+from rich.console import Console
+
+console = Console()
+with console.capture() as capture:
+    console.print("[bold red]Hello[/] World")
+output = capture.get()
+assert "Hello" in output
+```
+
+### Como testar Control+C (SIGINT)
+
+```python
+import signal
+import os
+
+def test_ctrl_c_handler():
+    # Guardar handler original
+    original_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    
+    # Registrar nuestro handler
+    def handler(signum, frame):
+        print("Signal handled!")
+    
+    signal.signal(signal.SIGINT, handler)
+    
+    # Simular signal con os.kill
+    os.kill(os.getpid(), signal.SIGINT)
+    
+    # Restaurar handler original
+    signal.signal(signal.SIGINT, original_handler)
+```
+
+Alternativa con threading (para procesos separados):
+
+```python
+import threading
+import time
+
+def test_interrupt_in_thread():
+    def trigger_interrupt():
+        time.sleep(0.1)
+        os.kill(os.getpid(), signal.SIGINT)
+    
+    thread = threading.Thread(target=trigger_interrupt)
+    thread.start()
+    
+    # Tu codigo que maneja interrupciones
+    # ...
+    
+    thread.join()
+```
+
+---
+
 ## Slice 2: Visualizacion UI con Rich
 
 ### 2.1 AT (RED)
