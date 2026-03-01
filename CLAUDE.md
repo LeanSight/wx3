@@ -2,6 +2,9 @@
 - STRICTORLY NO COMMENTS: Never add comments to code unless explicitly requested.
 - Use self-documenting code with descriptive variable and function names.
 
+## Language
+- Usar espanol neutro sin acentos argentinos en cualquier texto para el usuario (no code). Ejemplos: "archivo" no "archivo", "configuracion" no "configuracion".
+
 ## ATDD/TDD Workflow
 - After each test passes GREEN: commit + push immediately.
 
