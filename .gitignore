@@ -15,3 +15,4 @@ checkpoints/
 # Local cache and Claude Code settings
 .enhance_meeting_cache.json
 .claude/
+wx41/tests/fixtures/
