@@ -4,6 +4,8 @@ from typing import Optional, Tuple, Dict
 from pathlib import Path
 
 from wx41.context import PipelineContext
+from wx41.step_common import timer
+from wx41.transcribe_aai import transcribe_assemblyai
 
 @dataclass(frozen=True)
 class TranscribeConfig:
@@ -12,12 +14,20 @@ class TranscribeConfig:
     language: Optional[str] = None
     speakers: Optional[int] = None
 
+@timer('transcribe')
 def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineContext:
     audio = ctx.outputs.get('enhanced') or ctx.outputs.get('normalized') or ctx.src
-    from wx41.steps.transcribe import transcribe_assemblyai
-    txt, jsn = transcribe_assemblyai(audio, config)
+    
+    if config.backend == 'assemblyai':
+        txt, jsn = transcribe_assemblyai(
+            audio, 
+            api_key=config.api_key, 
+            lang=config.language, 
+            speakers=config.speakers,
+            progress_callback=ctx.step_progress
+        )
+    else:
+        raise RuntimeError(f'Backend {config.backend} not implemented yet')
+
     new_outputs = {**ctx.outputs, 'transcript_txt': txt, 'transcript_json': jsn}
     return dataclasses.replace(ctx, outputs=new_outputs)
-
-def transcribe_assemblyai(audio: Path, config: TranscribeConfig) -> Tuple[Path, Path]:
-    return Path('none.txt'), Path('none.json')
