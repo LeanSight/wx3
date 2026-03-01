@@ -6,6 +6,7 @@ from pathlib import Path
 from wx41.context import PipelineContext
 from wx41.step_common import timer
 from wx41.transcribe_aai import transcribe_assemblyai
+from wx41.transcribe_whisper import transcribe_whisper
 
 @dataclass(frozen=True)
 class TranscribeConfig:
@@ -13,6 +14,7 @@ class TranscribeConfig:
     api_key: Optional[str] = None
     language: Optional[str] = None
     speakers: Optional[int] = None
+    model: str = 'openai/whisper-base'
 
 @timer('transcribe')
 def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineContext:
@@ -25,6 +27,15 @@ def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineC
             lang=config.language, 
             speakers=config.speakers,
             progress_callback=ctx.step_progress
+        )
+    elif config.backend == 'whisper':
+        txt, jsn = transcribe_whisper(
+            audio,
+            api_key=config.api_key,
+            lang=config.language,
+            speakers=config.speakers,
+            progress_callback=ctx.step_progress,
+            model=config.model,
         )
     else:
         raise RuntimeError(f'Backend {config.backend} not implemented yet')
