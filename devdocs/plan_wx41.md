@@ -5,6 +5,18 @@ Ref: devdocs/standard-atdd-tdd.md, devdocs/arquitectura.md
 
 ---
 
+## Objetivos wx41
+
+Investigar la forma más idiomática y pythónica en 2026 de programar, y reimplementar desde cero pipeline.py y cli.py con soporte para:
+
+- Encadenado de steps
+- Activación/desactivación y configuración de steps de forma declarativa (orientado a modularidad)
+- Visualización en una UI
+- Retoma correcta del proceso si se detiene (resumability)
+- Implementación de dry run para simular la ejecución
+
+---
+
 ## 1. Arquitectura de Desacoplamiento Total
 
 ### PipelineContext (Genérico)
