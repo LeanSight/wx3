@@ -59,6 +59,34 @@ def main(
     orchestrator.run(src, config)
 ```
 
+## Step Ownership: Output Keys
+
+Cada step debe declarar en su `StepConfig` las keys que usará para registrar sus outputs en `ctx.outputs`. Esto permite que el AT sea genérico y no dependa de nombres hardcodeados.
+
+```python
+@dataclass(frozen=True)
+class TranscribeConfig:
+    backend: str = "assemblyai"
+    api_key: Optional[str] = None
+    output_keys: tuple[str, str] = ("transcript_txt", "transcript_json")
+```
+
+El step usa las keys del config:
+```python
+def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineContext:
+    txt, jsn = ...
+    new_outputs = {**ctx.outputs, config.output_keys[0]: txt, config.output_keys[1]: jsn}
+    return dataclasses.replace(ctx, outputs=new_outputs)
+```
+
+El AT es genérico:
+```python
+config = get_transcribe_config()
+for key in config.output_keys:
+    assert key in ctx.outputs, f"Falta output: {key}"
+    assert ctx.outputs[key].exists()
+```
+
 ## Ventajas para el Agente
 - **Escalabilidad**: Añadir un step no requiere modificar `context.py`.
 - **Agnosticismo**: El `PipelineContext` (estado) permanece libre de secretos de infraestructura.

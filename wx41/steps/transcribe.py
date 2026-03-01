@@ -15,6 +15,7 @@ class TranscribeConfig:
     language: Optional[str] = None
     speakers: Optional[int] = None
     model: str = 'openai/whisper-base'
+    output_keys: Tuple[str, str] = ('transcript_txt', 'transcript_json')
 
 @timer('transcribe')
 def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineContext:
@@ -40,5 +41,5 @@ def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineC
     else:
         raise RuntimeError(f'Backend {config.backend} not implemented yet')
 
-    new_outputs = {**ctx.outputs, 'transcript_txt': txt, 'transcript_json': jsn}
+    new_outputs = {**ctx.outputs, config.output_keys[0]: txt, config.output_keys[1]: jsn}
     return dataclasses.replace(ctx, outputs=new_outputs)
