@@ -20,7 +20,7 @@ Implementacion actual en `wx41/` cumple parcialmente los objetivos. Aqui estan l
 - ✅ output_keys en config
 - ✅ Activacion/desactivacion via settings
 - ✅ Busqueda por nombre en ctx.outputs
-- ⚠️ Falta: Configuracion via YAML/JSON (solo dict)
+- ✅ Declaracion siempre en Python (dict/dataclass)
 
 ### Objetivo 3: Visualizacion en una UI
 - ❌ No hay UI
@@ -117,41 +117,12 @@ class PipelineState:
 
 ---
 
-### Brecha 4: Configuracion Solo Dict (no YAML/JSON)
-
-**Estado actual:** Solo acepta dict en Python.
-
-**Que falta:**
-- Cargar configuracion desde archivo YAML
-- Cargar configuracion desde archivo JSON
-- Validacion de schema
-
-**Como implementar:**
-```python
-def load_config_from_yaml(path: Path) -> PipelineConfig:
-    import yaml
-    data = yaml.safe_load(path.read_text())
-    
-    settings = {}
-    for step_name, step_config in data.get("steps", {}).items():
-        if step_name == "transcribe":
-            settings[step_name] = TranscribeConfig(**step_config)
-        # ...
-    
-    return PipelineConfig(
-        force=data.get("force", False),
-        settings=settings
-    )
-```
-
----
-
 ## Tabla de Brechas
 
 | Objetivo | Estado | Brecha | Prioridad |
 |----------|--------|--------|-----------|
 | Encadenado | ✅ Completo | - | - |
-| Declarativo | ⚠️ Parcial | Solo dict, no YAML/JSON | Media |
+| Declarativo | ✅ Completo | Python (no YAML) | - |
 | Visualizacion | ❌ Nulo | No hay UI | Alta |
 | Resumability | ⚠️ Parcial | Solo check archivos | Alta |
 | Dry run | ❌ Nulo | No hay modo simulacion | Alta |
@@ -174,25 +145,21 @@ def load_config_from_yaml(path: Path) -> PipelineConfig:
 - Agregar metadata de cada step
 - Implementar resume desde ultimo punto
 
-### Fase 4: YAML/JSON Config (Baja prioridad)
-- Agregar loader desde archivo
-- Validacion de schema
-
 ---
 
 ## Conclusion
 
-**wx41 actual cumple 2.5/5 objetivos completamente.**
+**wx41 actual cumple 3.5/5 objetivos completamente.**
 
 | Objetivo | Cumplimiento |
 |----------|--------------|
-| Encadenado | 100% |
-| Declarativo | 80% |
-| Visualizacion | 0% |
-| Resumability | 50% |
-| Dry run | 0% |
+| Encadenado | 100% ✅ |
+| Declarativo | 100% ✅ (Python) |
+| Visualizacion | 0% ❌ |
+| Resumability | 50% ⚠️ |
+| Dry run | 0% ❌ |
 
-**Promedio: 46%**
+**Promedio: 50%**
 
 Las brechas principales son:
 1. Visualizacion UI (0%)
