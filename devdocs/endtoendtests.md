@@ -8,10 +8,11 @@
 ## Reglas
 
 1. **AT primero**: Escribir el AT antes de cualquier produccion. Debe fallar.
-2. **Outputs del config**: Usar `config.output_keys` del StepConfig, no valores hardcodeados.
-3. **Verificar comportamiento observable**: Archivos en disco, campos en ctx, respuestas.
-4. **Un AT por feature/slice**: Cover todo el wiring entre capas.
-5. **AT verde = feature completa**: No avanzar al siguiente slice si el AT esta en rojo.
+2. **Seguir arquitectura.md**: Cada step debe definir su `StepConfig` con `output_keys`. El AT debe usar esas keys, nunca hardcodear nombres.
+3. **Outputs del config**: Usar `config.output_keys` del StepConfig, no valores hardcodeados.
+4. **Verificar comportamiento observable**: Archivos en disco, campos en ctx, respuestas.
+5. **Un AT por feature/slice**: Cover todo el wiring entre capas.
+6. **AT verde = feature completa**: No avanzar al siguiente slice si el AT esta en rojo.
 
 ## Ejemplo
 
