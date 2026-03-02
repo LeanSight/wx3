@@ -31,3 +31,30 @@ def generate_black_video(
         return True
     except FileNotFoundError:
         raise RuntimeError("ffmpeg not found. Please install ffmpeg.")
+
+
+def compress_video(
+    in_path: Path,
+    out_path: Path,
+    crf: int = 23,
+    preset: str = "medium",
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+) -> bool:
+    """Compress video using libx264."""
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(in_path),
+        "-c:v", "libx264",
+        "-crf", str(crf),
+        "-preset", preset,
+        "-c:a", "copy",
+        str(out_path)
+    ]
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg error: {result.stderr}")
+        return True
+    except FileNotFoundError:
+        raise RuntimeError("ffmpeg not found. Please install ffmpeg.")

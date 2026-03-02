@@ -19,18 +19,18 @@ class TestStepContract:
         audio.touch()
         
         # Simulador Universal: Mockea la infraestructura para TODOS los steps
-        # para que no fallen por APIs externas
         for s_name, s_info in get_all_steps().items():
-            def make_mock(name):
+            def make_mock(name, info):
                 def mock_fn(ctx, config):
-                    for key in config.output_keys:
-                        out_path = predict_output_path(ctx.src, name, key)
-                        out_path.parent.mkdir(parents=True, exist_ok=True)
-                        out_path.write_text(f"simulated {name}", encoding="utf-8")
+                    if info.output_fn:
+                        outputs = info.output_fn(ctx, config)
+                        for out_path in outputs.values():
+                            out_path.parent.mkdir(parents=True, exist_ok=True)
+                            out_path.write_text(f"simulated {name}", encoding="utf-8")
                     return ctx
                 return mock_fn
                 
-            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name))
+            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name, s_info))
             monkeypatch.setitem(STEP_REGISTRY, s_name, new_info)
         
         runner = CliRunner()
@@ -38,11 +38,14 @@ class TestStepContract:
         
         assert result.exit_code == 0, f"CLI falló para {step_name}: {result.output}"
         
-        # Verificación basada en Metadata del step parametrizado
+        # Verificación basada en Metadata
         target_info = get_step_info(step_name)
         config = target_info.config_class()
         for key in config.output_keys:
             expected_path = predict_output_path(audio, step_name, key)
+            # Nota: para steps que dependen de otros, predict_output_path podria necesitar el ctx
+            # Pero para el Smoke Test, verificamos que el archivo resultante existe.
+            # El oráculo usa la lógica de producción.
             assert expected_path.exists(), f"El step {step_name} no produjo el archivo para la llave {key}"
 
     def test_step_cli_resumability(self, step_name, tmp_path, monkeypatch):
@@ -57,33 +60,30 @@ class TestStepContract:
         call_counts = {name: 0 for name in get_all_steps().keys()}
         
         for s_name, s_info in get_all_steps().items():
-            def make_mock(name):
+            def make_mock(name, info):
                 def mock_fn(ctx, config):
                     call_counts[name] += 1
-                    for key in config.output_keys:
-                        out_path = predict_output_path(ctx.src, name, key)
-                        out_path.parent.mkdir(parents=True, exist_ok=True)
-                        out_path.write_text(f"simulated {name}", encoding="utf-8")
+                    if info.output_fn:
+                        outputs = info.output_fn(ctx, config)
+                        for out_path in outputs.values():
+                            out_path.parent.mkdir(parents=True, exist_ok=True)
+                            out_path.write_text(f"simulated {name}", encoding="utf-8")
                     return ctx
                 return mock_fn
                 
-            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name))
+            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name, s_info))
             monkeypatch.setitem(STEP_REGISTRY, s_name, new_info)
         
         runner = CliRunner()
         
-        # Primera ejecución: debe crear archivos e incrementar contadores
+        # Primera ejecución
         runner.invoke(main, [str(audio)])
-        assert call_counts[step_name] == 1, f"El step {step_name} no se ejecutó en la primera pasada"
+        assert call_counts[step_name] == 1
         
-        # Segunda ejecución: resumability debe activarse
-        # Reiniciamos contadores para claridad (aunque el mock los incrementaría a 2 si fallara el skip)
+        # Segunda ejecución
         call_counts[step_name] = 0
         runner.invoke(main, [str(audio)])
-        
-        assert call_counts[step_name] == 0, (
-            f"Resumability falló: el step {step_name} se ejecutó de nuevo a pesar de tener outputs"
-        )
+        assert call_counts[step_name] == 0, f"Resumability falló para {step_name}"
 
     def test_step_cli_optionality(self, step_name, tmp_path, monkeypatch):
         from click.testing import CliRunner
@@ -93,29 +93,32 @@ class TestStepContract:
         
         target_info = get_step_info(step_name)
         if not target_info.optional:
-            pytest.skip(f"El step {step_name} no es opcional, saltando prueba de desactivación")
+            pytest.skip(f"El step {step_name} no es opcional")
             
         audio = tmp_path / "audio.m4a"
         audio.touch()
         
         call_counts = {name: 0 for name in get_all_steps().keys()}
         
-        # Mocks para todos
         for s_name, s_info in get_all_steps().items():
-            def make_mock(name):
+            def make_mock(name, info):
                 def mock_fn(ctx, config):
                     call_counts[name] += 1
+                    if info.output_fn:
+                        outputs = info.output_fn(ctx, config)
+                        for out_path in outputs.values():
+                            out_path.parent.mkdir(parents=True, exist_ok=True)
+                            out_path.write_text(f"simulated {name}", encoding="utf-8")
                     return ctx
                 return mock_fn
-            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name))
+            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name, s_info))
             monkeypatch.setitem(STEP_REGISTRY, s_name, new_info)
             
         runner = CliRunner()
-        # Ejecutamos con el flag --no-{step}
         result = runner.invoke(main, [str(audio), f"--no-{step_name}"])
         
-        assert result.exit_code == 0, f"CLI falló para {step_name}: {result.output}"
-        assert call_counts[step_name] == 0, f"El step opcional {step_name} se ejecutó a pesar de --no-{step_name}"
+        assert result.exit_code == 0
+        assert call_counts[step_name] == 0
 
     def test_step_cli_dry_run(self, step_name, tmp_path, monkeypatch):
         from click.testing import CliRunner
@@ -129,25 +132,24 @@ class TestStepContract:
         call_counts = {name: 0 for name in get_all_steps().keys()}
         
         for s_name, s_info in get_all_steps().items():
-            def make_mock(name):
+            def make_mock(name, info):
                 def mock_fn(ctx, config):
                     call_counts[name] += 1
                     return ctx
                 return mock_fn
-            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name))
+            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name, s_info))
             monkeypatch.setitem(STEP_REGISTRY, s_name, new_info)
             
         runner = CliRunner()
         result = runner.invoke(main, [str(audio), "--dry-run"])
         
         assert result.exit_code == 0
-        assert call_counts[step_name] == 0, f"Dry run falló: el step {step_name} se ejecutó"
+        assert call_counts[step_name] == 0
         
-        # Verificar que no se crearon archivos accidentales
         config = get_step_info(step_name).config_class()
         for key in config.output_keys:
             expected_path = predict_output_path(audio, step_name, key)
-            assert not expected_path.exists(), f"Dry run creó el archivo {expected_path}"
+            assert not expected_path.exists()
 
 
 class TestStepOptionality:
@@ -183,7 +185,6 @@ class TestCLIOptionality:
         assert "--no-enhance" in result.stdout
         assert "--no-transcribe" not in result.stdout
         
-        # Test dynamic step-specific options
         assert "--transcribe-backend" in result.stdout
         assert "--normalize-target-lufs" in result.stdout
 
@@ -211,7 +212,7 @@ class TestCLIOptionality:
             "--normalize-target-lufs", "-14.0"
         ])
         
-        assert result.exit_code == 0, f"CLI FAILED: {result.output}"
+        assert result.exit_code == 0
         settings = captured_config[0].settings
         
         assert settings["normalize"].enabled is False
@@ -224,7 +225,7 @@ class TestPipelineWalkingSkeleton:
         try:
             import torch
         except ModuleNotFoundError:
-            pytest.skip("torch not installed - this AT requires full dependencies")
+            pytest.skip("torch not installed")
         backend = "whisper"
         
         config = PipelineConfig(
@@ -236,7 +237,7 @@ class TestPipelineWalkingSkeleton:
         ctx = orchestrator.run(audio_file)
 
         for key in transcribe_cfg.output_keys:
-            assert key in ctx.outputs, f"{key} not in outputs"
-            assert ctx.outputs[key].exists(), f"Output file not found: {key}"
+            assert key in ctx.outputs
+            assert ctx.outputs[key].exists()
             content = ctx.outputs[key].read_text(encoding="utf-8")
-            assert len(content) > 0, f"Output file is empty: {key}"
+            assert len(content) > 0

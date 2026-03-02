@@ -9,7 +9,6 @@ from wx41.steps import get_all_steps, StepInfo
 def create_cli():
     # Ensure all steps are loaded
     all_steps = get_all_steps()
-    # print(f"DEBUG: Found steps in create_cli: {list(all_steps.keys())}")
     
     @click.command(context_settings={"help_option_names": ["-h", "--help"]})
     @click.argument("src", type=click.Path(exists=True, path_type=Path))

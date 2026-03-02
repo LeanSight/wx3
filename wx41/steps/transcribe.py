@@ -7,9 +7,11 @@ from wx41.context import PipelineContext
 from wx41.step_common import timer
 from wx41.transcribe_aai import transcribe_assemblyai
 from wx41.transcribe_whisper import transcribe_whisper
+from wx41.steps import register_step, predict_output_path
 
 @dataclass(frozen=True)
 class TranscribeConfig:
+
     backend: str = 'assemblyai'
     api_key: Optional[str] = None
     language: Optional[str] = None
@@ -24,9 +26,8 @@ def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineC
         return ctx
     audio = ctx.outputs.get('enhanced') or ctx.outputs.get('normalized') or ctx.src
     
-    from wx41.steps import predict_output_path
-    txt_path = predict_output_path(audio, "transcribe", config.output_keys[0])
-    jsn_path = predict_output_path(audio, "transcribe", config.output_keys[1])
+    txt_path = predict_output_path(ctx.src, "transcribe", config.output_keys[0])
+    jsn_path = predict_output_path(ctx.src, "transcribe", config.output_keys[1])
     
     if config.backend == 'assemblyai':
         txt, jsn = transcribe_assemblyai(
@@ -59,15 +60,13 @@ def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineC
 def transcribe_output_fn(ctx: PipelineContext, config: TranscribeConfig) -> Dict[str, Path]:
     if not config.enabled:
         return {}
-    audio = ctx.outputs.get('enhanced') or ctx.outputs.get('normalized') or ctx.src
-    from wx41.steps import predict_output_path
-    txt_path = predict_output_path(audio, "transcribe", config.output_keys[0])
-    jsn_path = predict_output_path(audio, "transcribe", config.output_keys[1])
+    txt_path = predict_output_path(ctx.src, "transcribe", config.output_keys[0])
+    jsn_path = predict_output_path(ctx.src, "transcribe", config.output_keys[1])
     return {config.output_keys[0]: txt_path, config.output_keys[1]: jsn_path}
 
 
-from wx41.steps import register_step
 register_step(
+
     "transcribe", 
     transcribe_step, 
     transcribe_output_fn,

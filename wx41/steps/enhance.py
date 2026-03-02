@@ -5,6 +5,7 @@ from typing import Optional, Dict
 
 from wx41.context import PipelineContext
 from wx41.audio_enhance import apply_clearvoice
+from wx41.steps import register_step, predict_output_path
 
 
 @dataclass(frozen=True)
@@ -18,8 +19,7 @@ def enhance_step(ctx: PipelineContext, config: EnhanceConfig) -> PipelineContext
     if not config.enabled:
         return ctx
     audio = ctx.outputs.get("normalized") or ctx.src
-    from wx41.steps import predict_output_path
-    out_path = predict_output_path(audio, "enhance", config.output_keys[0])
+    out_path = predict_output_path(ctx.src, "enhance", config.output_keys[0])
     apply_clearvoice(audio, out_path, model_path=config.model_path, progress_callback=ctx.step_progress)
     new_outputs = {**ctx.outputs, config.output_keys[0]: out_path}
     return dataclasses.replace(ctx, outputs=new_outputs)
@@ -28,14 +28,12 @@ def enhance_step(ctx: PipelineContext, config: EnhanceConfig) -> PipelineContext
 def enhance_output_fn(ctx: PipelineContext, config: EnhanceConfig) -> Dict[str, Path]:
     if not config.enabled:
         return {}
-    audio = ctx.outputs.get("normalized") or ctx.src
-    from wx41.steps import predict_output_path
-    out_path = predict_output_path(audio, "enhance", config.output_keys[0])
+    out_path = predict_output_path(ctx.src, "enhance", config.output_keys[0])
     return {config.output_keys[0]: out_path}
 
 
-from wx41.steps import register_step
 register_step(
+
     "enhance", 
     enhance_step, 
     enhance_output_fn,
