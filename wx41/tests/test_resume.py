@@ -12,14 +12,17 @@ def test_resume_skips_existing_outputs(tmp_path, monkeypatch):
     transcribe_cfg = config.settings["transcribe"]
 
     call_count = {"n": 0}
+    from wx41.steps import predict_output_path
+    
     def fake_whisper(src, **kw):
         call_count["n"] += 1
-        txt = src.parent / f"{src.stem}_whisper.txt"
-        jsn = src.parent / f"{src.stem}_whisper.json"
+        txt = kw.get("txt_path") or predict_output_path(src, "transcribe", transcribe_cfg.output_keys[0])
+        jsn = kw.get("json_path") or predict_output_path(src, "transcribe", transcribe_cfg.output_keys[1])
         txt.write_text(f"call_{call_count['n']}", encoding="utf-8")
         jsn.write_text("[]", encoding="utf-8")
         return txt, jsn
     monkeypatch.setattr("wx41.steps.transcribe.transcribe_whisper", fake_whisper)
+
 
     orchestrator = MediaOrchestrator(config, [])
 

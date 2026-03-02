@@ -4,6 +4,152 @@ from wx41.pipeline import MediaOrchestrator
 from wx41.context import PipelineConfig
 from wx41.steps.transcribe import TranscribeConfig
 
+from wx41.steps import get_all_steps, get_step_info, predict_output_path
+
+# Smoke test dinámico: se parametriza solo por los steps registrados
+@pytest.mark.parametrize("step_name", list(get_all_steps().keys()))
+class TestStepContract:
+    def test_step_cli_generates_outputs(self, step_name, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+        from wx41.cli import main
+        from wx41.steps import STEP_REGISTRY, get_all_steps
+        import dataclasses
+        
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+        
+        # Simulador Universal: Mockea la infraestructura para TODOS los steps
+        # para que no fallen por APIs externas
+        for s_name, s_info in get_all_steps().items():
+            def make_mock(name):
+                def mock_fn(ctx, config):
+                    for key in config.output_keys:
+                        out_path = predict_output_path(ctx.src, name, key)
+                        out_path.parent.mkdir(parents=True, exist_ok=True)
+                        out_path.write_text(f"simulated {name}", encoding="utf-8")
+                    return ctx
+                return mock_fn
+                
+            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name))
+            monkeypatch.setitem(STEP_REGISTRY, s_name, new_info)
+        
+        runner = CliRunner()
+        result = runner.invoke(main, [str(audio)])
+        
+        assert result.exit_code == 0, f"CLI falló para {step_name}: {result.output}"
+        
+        # Verificación basada en Metadata del step parametrizado
+        target_info = get_step_info(step_name)
+        config = target_info.config_class()
+        for key in config.output_keys:
+            expected_path = predict_output_path(audio, step_name, key)
+            assert expected_path.exists(), f"El step {step_name} no produjo el archivo para la llave {key}"
+
+    def test_step_cli_resumability(self, step_name, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+        from wx41.cli import main
+        from wx41.steps import STEP_REGISTRY, get_all_steps
+        import dataclasses
+        
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+        
+        call_counts = {name: 0 for name in get_all_steps().keys()}
+        
+        for s_name, s_info in get_all_steps().items():
+            def make_mock(name):
+                def mock_fn(ctx, config):
+                    call_counts[name] += 1
+                    for key in config.output_keys:
+                        out_path = predict_output_path(ctx.src, name, key)
+                        out_path.parent.mkdir(parents=True, exist_ok=True)
+                        out_path.write_text(f"simulated {name}", encoding="utf-8")
+                    return ctx
+                return mock_fn
+                
+            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name))
+            monkeypatch.setitem(STEP_REGISTRY, s_name, new_info)
+        
+        runner = CliRunner()
+        
+        # Primera ejecución: debe crear archivos e incrementar contadores
+        runner.invoke(main, [str(audio)])
+        assert call_counts[step_name] == 1, f"El step {step_name} no se ejecutó en la primera pasada"
+        
+        # Segunda ejecución: resumability debe activarse
+        # Reiniciamos contadores para claridad (aunque el mock los incrementaría a 2 si fallara el skip)
+        call_counts[step_name] = 0
+        runner.invoke(main, [str(audio)])
+        
+        assert call_counts[step_name] == 0, (
+            f"Resumability falló: el step {step_name} se ejecutó de nuevo a pesar de tener outputs"
+        )
+
+    def test_step_cli_optionality(self, step_name, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+        from wx41.cli import main
+        from wx41.steps import STEP_REGISTRY, get_all_steps, get_step_info
+        import dataclasses
+        
+        target_info = get_step_info(step_name)
+        if not target_info.optional:
+            pytest.skip(f"El step {step_name} no es opcional, saltando prueba de desactivación")
+            
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+        
+        call_counts = {name: 0 for name in get_all_steps().keys()}
+        
+        # Mocks para todos
+        for s_name, s_info in get_all_steps().items():
+            def make_mock(name):
+                def mock_fn(ctx, config):
+                    call_counts[name] += 1
+                    return ctx
+                return mock_fn
+            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name))
+            monkeypatch.setitem(STEP_REGISTRY, s_name, new_info)
+            
+        runner = CliRunner()
+        # Ejecutamos con el flag --no-{step}
+        result = runner.invoke(main, [str(audio), f"--no-{step_name}"])
+        
+        assert result.exit_code == 0, f"CLI falló para {step_name}: {result.output}"
+        assert call_counts[step_name] == 0, f"El step opcional {step_name} se ejecutó a pesar de --no-{step_name}"
+
+    def test_step_cli_dry_run(self, step_name, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+        from wx41.cli import main
+        from wx41.steps import STEP_REGISTRY, get_all_steps, get_step_info
+        import dataclasses
+        
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+        
+        call_counts = {name: 0 for name in get_all_steps().keys()}
+        
+        for s_name, s_info in get_all_steps().items():
+            def make_mock(name):
+                def mock_fn(ctx, config):
+                    call_counts[name] += 1
+                    return ctx
+                return mock_fn
+            new_info = dataclasses.replace(s_info, step_fn=make_mock(s_name))
+            monkeypatch.setitem(STEP_REGISTRY, s_name, new_info)
+            
+        runner = CliRunner()
+        result = runner.invoke(main, [str(audio), "--dry-run"])
+        
+        assert result.exit_code == 0
+        assert call_counts[step_name] == 0, f"Dry run falló: el step {step_name} se ejecutó"
+        
+        # Verificar que no se crearon archivos accidentales
+        config = get_step_info(step_name).config_class()
+        for key in config.output_keys:
+            expected_path = predict_output_path(audio, step_name, key)
+            assert not expected_path.exists(), f"Dry run creó el archivo {expected_path}"
+
+
 class TestStepOptionality:
     def test_steps_registry_has_optional_field(self):
         from wx41.steps import get_all_steps
