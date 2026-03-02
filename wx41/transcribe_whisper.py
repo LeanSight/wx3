@@ -2,9 +2,10 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Optional, Tuple, Callable
-import torch
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 import tempfile
+
+from wx41.model_cache import _get_model
+
 
 def transcribe_whisper(
     audio: Path,
@@ -14,6 +15,9 @@ def transcribe_whisper(
     progress_callback: Optional[Callable[[int, int], None]] = None,
     model: str = "openai/whisper-base",
 ) -> Tuple[Path, Path]:
+    import torch
+    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+
     if progress_callback:
         progress_callback(0, 3)
 
@@ -39,16 +43,21 @@ def transcribe_whisper(
 
     model_id = model
     processor = AutoProcessor.from_pretrained(model_id)
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        model_id,
-        torch_dtype=torch_dtype,
-        low_cpu_mem_usage=True,
-    )
-    model.to(device)
+
+    def load_model():
+        m = AutoModelForSpeechSeq2Seq.from_pretrained(
+            model_id,
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=True,
+        )
+        m.to(device)
+        return m
+
+    loaded_model = _get_model(model_id, load_model)
 
     pipe = pipeline(
         "automatic-speech-recognition",
-        model=model,
+        model=loaded_model,
         tokenizer=processor.tokenizer,
         feature_extractor=processor.feature_extractor,
         torch_dtype=torch_dtype,

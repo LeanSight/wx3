@@ -6,6 +6,10 @@ from wx41.steps.transcribe import TranscribeConfig
 
 class TestPipelineWalkingSkeleton:
     def test_produces_transcript_files_with_whisper(self, audio_file):
+        try:
+            import torch
+        except ModuleNotFoundError:
+            pytest.skip("torch not installed - this AT requires full dependencies")
         backend = "whisper"
         
         config = PipelineConfig(

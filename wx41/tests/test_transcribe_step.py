@@ -4,14 +4,15 @@ from wx41.steps.transcribe import transcribe_step, TranscribeConfig
 from wx41.context import PipelineContext
 
 class TestTranscribeStepModular:
-    def test_transcribe_happy_path(self, audio_file, monkeypatch):
-        # 1. Setup
-        ctx = PipelineContext(src=audio_file)
+    def test_transcribe_happy_path(self, tmp_path, monkeypatch):
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+        ctx = PipelineContext(src=audio)
         config = TranscribeConfig(backend="assemblyai")
         
         # Mock de la infraestructura
-        txt_out = audio_file.parent / "audio_transcript.txt"
-        jsn_out = audio_file.parent / "audio_timestamps.json"
+        txt_out = audio.parent / "audio_transcript.txt"
+        jsn_out = audio.parent / "audio_timestamps.json"
         
         def fake_aai(*args, **kwargs):
             txt_out.write_text("hello", encoding="utf-8")

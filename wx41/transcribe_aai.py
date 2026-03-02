@@ -3,7 +3,6 @@ import os
 import time
 from pathlib import Path
 from typing import Optional, Tuple, Callable
-import assemblyai as aai
 
 def transcribe_assemblyai(
     audio: Path,
@@ -12,6 +11,8 @@ def transcribe_assemblyai(
     speakers: Optional[int] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
 ) -> Tuple[Path, Path]:
+    import assemblyai as aai
+    
     key = api_key or os.environ.get('ASSEMBLY_AI_KEY')
     if not key:
         raise RuntimeError('AssemblyAI API key not set')
