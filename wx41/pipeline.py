@@ -26,9 +26,12 @@ class Pipeline:
     def _notify(self, action: Callable[[PipelineObserver], None]) -> None:
         for ob in self._observers: action(ob)
 
-    def run(self, ctx: PipelineContext) -> PipelineContext:
+    def run(self, ctx: PipelineContext, dry_run: bool = False) -> PipelineContext:
         names = [s.name for s in self._steps]
         self._notify(lambda ob: ob.on_pipeline_start(names, ctx))
+        if dry_run:
+            self._notify(lambda ob: ob.on_pipeline_end(ctx))
+            return ctx
         for step in self._steps:
             self._notify(lambda ob: ob.on_step_start(step.name, ctx))
             ctx = step.fn(ctx)
@@ -51,7 +54,7 @@ class MediaOrchestrator:
         self._config = config
         self._observers = observers
 
-    def run(self, src: Path) -> PipelineContext:
-        ctx = PipelineContext(src=src, force=self._config.force)
+    def run(self, src: Path, dry_run: bool = False) -> PipelineContext:
+        ctx = PipelineContext(src=src, force=self._config.force, dry_run=dry_run)
         pipeline = build_audio_pipeline(self._config, self._observers)
-        return pipeline.run(ctx)
+        return pipeline.run(ctx, dry_run=dry_run)
