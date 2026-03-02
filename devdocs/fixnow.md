@@ -18,4 +18,5 @@ Este documento detalla las brechas críticas detectadas entre la implementación
 
 *   **Clausuras vs Partial**: Migrado a `functools.partial` en `pipeline.py`.
 *   **Fuente de Verdad**: Los tests ya no hardcodean keys de output, usan la metadata del config/registro.
+*   **Contratos de Configuración**: Definido `StepConfig(Protocol)` en `context.py` para garantizar campos comunes (`enabled`, `output_keys`). El pipeline ahora valida las configuraciones contra este protocolo.
 

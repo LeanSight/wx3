@@ -24,13 +24,19 @@ def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineC
         return ctx
     audio = ctx.outputs.get('enhanced') or ctx.outputs.get('normalized') or ctx.src
     
+    from wx41.steps import predict_output_path
+    txt_path = predict_output_path(audio, "transcribe", config.output_keys[0])
+    jsn_path = predict_output_path(audio, "transcribe", config.output_keys[1])
+    
     if config.backend == 'assemblyai':
         txt, jsn = transcribe_assemblyai(
             audio, 
             api_key=config.api_key, 
             lang=config.language, 
             speakers=config.speakers,
-            progress_callback=ctx.step_progress
+            progress_callback=ctx.step_progress,
+            txt_path=txt_path,
+            json_path=jsn_path
         )
     elif config.backend == 'whisper':
         txt, jsn = transcribe_whisper(
@@ -40,6 +46,8 @@ def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineC
             speakers=config.speakers,
             progress_callback=ctx.step_progress,
             model=config.model,
+            txt_path=txt_path,
+            json_path=jsn_path
         )
     else:
         raise RuntimeError(f'Backend {config.backend} not implemented yet')
@@ -52,8 +60,9 @@ def transcribe_output_fn(ctx: PipelineContext, config: TranscribeConfig) -> Dict
     if not config.enabled:
         return {}
     audio = ctx.outputs.get('enhanced') or ctx.outputs.get('normalized') or ctx.src
-    txt_path = audio.parent / f"{audio.stem}_whisper.txt"
-    jsn_path = audio.parent / f"{audio.stem}_whisper.json"
+    from wx41.steps import predict_output_path
+    txt_path = predict_output_path(audio, "transcribe", config.output_keys[0])
+    jsn_path = predict_output_path(audio, "transcribe", config.output_keys[1])
     return {config.output_keys[0]: txt_path, config.output_keys[1]: jsn_path}
 
 

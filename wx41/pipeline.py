@@ -49,6 +49,7 @@ class Pipeline:
 
 def build_audio_pipeline(config: PipelineConfig, observers: List[PipelineObserver]) -> Pipeline:
     from wx41.steps import get_all_steps
+    from wx41.context import StepConfig
     from functools import partial
     
     all_steps = get_all_steps()
@@ -57,7 +58,7 @@ def build_audio_pipeline(config: PipelineConfig, observers: List[PipelineObserve
     # Process settings in the order they were provided
     for step_name, step_config in config.settings.items():
         # 1. Skip if step is explicitly disabled in config
-        if not getattr(step_config, 'enabled', True):
+        if isinstance(step_config, StepConfig) and not step_config.enabled:
             continue
             
         # 2. Find step in registry

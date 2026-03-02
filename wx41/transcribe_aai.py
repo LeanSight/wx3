@@ -10,8 +10,15 @@ def transcribe_assemblyai(
     lang: Optional[str] = None,
     speakers: Optional[int] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
+    txt_path: Optional[Path] = None,
+    json_path: Optional[Path] = None,
 ) -> Tuple[Path, Path]:
     import assemblyai as aai
+    
+    if not json_path:
+        json_path = audio.parent / f'{audio.stem}_timestamps.json'
+    if not txt_path:
+        txt_path = audio.parent / f'{audio.stem}_transcript.txt'
     
     key = api_key or os.environ.get('ASSEMBLY_AI_KEY')
     if not key:

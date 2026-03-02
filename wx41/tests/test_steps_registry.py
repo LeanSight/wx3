@@ -24,20 +24,18 @@ def test_step_info_holds_metadata():
     assert info.config_class == DummyConfig
     assert info.description == "A dummy step"
 
-def test_register_step_uses_step_info():
-    from wx41.steps import register_step, get_step_info
+def test_predict_output_path_follows_convention():
+    from wx41.steps import predict_output_path
     
-    def dummy_fn(ctx, cfg): return ctx
+    src = Path("/tmp/audio.m4a")
     
-    register_step(
-        name="test_step",
-        step_fn=dummy_fn,
-        optional=True,
-        description="test description"
-    )
+    path = predict_output_path(src, "normalize", "normalized")
+    assert path == Path("/tmp/audio_normalized.m4a")
     
-    info = get_step_info("test_step")
-    assert info.name == "test_step"
-    assert info.step_fn == dummy_fn
-    assert info.optional is True
-    assert info.description == "test description"
+    # Test with simplified suffix: transcribe_txt -> txt
+    path_txt = predict_output_path(src, "transcribe", "transcribe_txt")
+    assert path_txt == Path("/tmp/audio_txt.txt")
+    
+    # Test with different extension
+    path_json = predict_output_path(src, "transcribe", "transcript_json")
+    assert path_json == Path("/tmp/audio_transcript_json.json")

@@ -1,6 +1,11 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Protocol, Tuple, runtime_checkable
+
+@runtime_checkable
+class StepConfig(Protocol):
+    enabled: bool
+    output_keys: Tuple[str, ...]
 
 @dataclass(frozen=True)
 class PipelineConfig:

@@ -53,3 +53,24 @@ def get_step_info(name: str) -> Optional[StepInfo]:
 def get_all_steps() -> Dict[str, StepInfo]:
     load_steps()
     return STEP_REGISTRY
+
+
+def predict_output_path(src: Path, step_name: str, key: str) -> Path:
+    """Predict the output path for a given step and output key."""
+    # Simplify key if it starts with step_name (e.g. transcribe_json -> json)
+    # but only if it's not the only part
+    suffix = key
+    if key.startswith(f"{step_name}_"):
+        suffix = key[len(step_name)+1:]
+        
+    ext = src.suffix
+    if "txt" in key:
+        ext = ".txt"
+    elif "json" in key:
+        ext = ".json"
+    elif "srt" in key:
+        ext = ".srt"
+    elif "video" in key or "mp4" in key:
+        ext = ".mp4"
+        
+    return src.parent / f"{src.stem}_{suffix}{ext}"

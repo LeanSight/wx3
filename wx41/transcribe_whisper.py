@@ -14,9 +14,16 @@ def transcribe_whisper(
     speakers: Optional[int] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
     model: str = "openai/whisper-base",
+    txt_path: Optional[Path] = None,
+    json_path: Optional[Path] = None,
 ) -> Tuple[Path, Path]:
     import torch
     from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+
+    if not json_path:
+        json_path = audio.parent / f"{audio.stem}_whisper.json"
+    if not txt_path:
+        txt_path = audio.parent / f"{audio.stem}_whisper.txt"
 
     if progress_callback:
         progress_callback(0, 3)
@@ -81,7 +88,6 @@ def transcribe_whisper(
                 "speaker": "A"
             })
 
-    json_path = audio.parent / f"{audio.stem}_whisper.json"
     json_path.write_text(json.dumps(words, ensure_ascii=False, indent=2), encoding="utf-8")
 
     lines = []
@@ -92,7 +98,6 @@ def transcribe_whisper(
         ts = f"{h:02d}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
         lines.append(f"[{ts}] {w['speaker']}: {w['text']}")
 
-    txt_path = audio.parent / f"{audio.stem}_whisper.txt"
     txt_path.write_text("\n".join(lines), encoding="utf-8")
 
     if progress_callback:

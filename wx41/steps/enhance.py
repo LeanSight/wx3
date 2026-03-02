@@ -18,7 +18,8 @@ def enhance_step(ctx: PipelineContext, config: EnhanceConfig) -> PipelineContext
     if not config.enabled:
         return ctx
     audio = ctx.outputs.get("normalized") or ctx.src
-    out_path = audio.parent / f"{audio.stem}_enhanced.m4a"
+    from wx41.steps import predict_output_path
+    out_path = predict_output_path(audio, "enhance", config.output_keys[0])
     apply_clearvoice(audio, out_path, model_path=config.model_path, progress_callback=ctx.step_progress)
     new_outputs = {**ctx.outputs, config.output_keys[0]: out_path}
     return dataclasses.replace(ctx, outputs=new_outputs)
@@ -28,7 +29,8 @@ def enhance_output_fn(ctx: PipelineContext, config: EnhanceConfig) -> Dict[str, 
     if not config.enabled:
         return {}
     audio = ctx.outputs.get("normalized") or ctx.src
-    out_path = audio.parent / f"{audio.stem}_enhanced.m4a"
+    from wx41.steps import predict_output_path
+    out_path = predict_output_path(audio, "enhance", config.output_keys[0])
     return {config.output_keys[0]: out_path}
 
 
