@@ -47,20 +47,28 @@ class Pipeline:
         return ctx
 
 def build_audio_pipeline(config: PipelineConfig, observers: List[PipelineObserver]) -> Pipeline:
-    from wx41.steps.transcribe import transcribe_step, TranscribeConfig
-    t_cfg = config.settings.get('transcribe', TranscribeConfig())
-
-    def transcribe_output_fn(ctx: PipelineContext) -> Dict[str, Path]:
-        audio = ctx.outputs.get('enhanced') or ctx.outputs.get('normalized') or ctx.src
-        txt_path = audio.parent / f"{audio.stem}_whisper.txt"
-        jsn_path = audio.parent / f"{audio.stem}_whisper.json"
-        return {t_cfg.output_keys[0]: txt_path, t_cfg.output_keys[1]: jsn_path}
-
-    steps = [NamedStep(
-        name='transcribe',
-        fn=lambda c: transcribe_step(c, t_cfg),
-        output_fn=transcribe_output_fn,
-    )]
+    from wx41.steps import STEP_REGISTRY, STEP_OUTPUT_FN_REGISTRY
+    import wx41.steps.transcribe
+    
+    steps = []
+    for step_name, step_config in config.settings.items():
+        if step_name in STEP_REGISTRY:
+            step_fn = STEP_REGISTRY[step_name]
+            output_fn = STEP_OUTPUT_FN_REGISTRY.get(step_name)
+            
+            def make_step_fn(fn, cfg):
+                return lambda ctx: fn(ctx, cfg)
+            
+            def make_output_fn(fn, cfg):
+                if fn is None:
+                    return None
+                return lambda ctx: fn(ctx, cfg)
+            
+            steps.append(NamedStep(
+                name=step_name,
+                fn=make_step_fn(step_fn, step_config),
+                output_fn=make_output_fn(output_fn, step_config),
+            ))
     return Pipeline(steps, observers)
 
 class MediaOrchestrator:

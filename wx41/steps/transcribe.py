@@ -43,3 +43,14 @@ def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineC
 
     new_outputs = {**ctx.outputs, config.output_keys[0]: txt, config.output_keys[1]: jsn}
     return dataclasses.replace(ctx, outputs=new_outputs)
+
+
+def transcribe_output_fn(ctx: PipelineContext, config: TranscribeConfig) -> Dict[str, Path]:
+    audio = ctx.outputs.get('enhanced') or ctx.outputs.get('normalized') or ctx.src
+    txt_path = audio.parent / f"{audio.stem}_whisper.txt"
+    jsn_path = audio.parent / f"{audio.stem}_whisper.json"
+    return {config.output_keys[0]: txt_path, config.output_keys[1]: jsn_path}
+
+
+from wx41.steps import register_step
+register_step("transcribe", transcribe_step, transcribe_output_fn)
