@@ -48,28 +48,36 @@ class Pipeline:
         return ctx
 
 def build_audio_pipeline(config: PipelineConfig, observers: List[PipelineObserver]) -> Pipeline:
-    from wx41.steps import STEP_REGISTRY, STEP_OUTPUT_FN_REGISTRY
-    import wx41.steps.transcribe
+    from wx41.steps import get_all_steps
+    from functools import partial
     
+    all_steps = get_all_steps()
     steps = []
+    
+    # Process settings in the order they were provided
     for step_name, step_config in config.settings.items():
-        if step_name in STEP_REGISTRY:
-            step_fn = STEP_REGISTRY[step_name]
-            output_fn = STEP_OUTPUT_FN_REGISTRY.get(step_name)
+        # 1. Skip if step is explicitly disabled in config
+        if not getattr(step_config, 'enabled', True):
+            continue
             
-            def make_step_fn(fn, cfg):
-                return lambda ctx: fn(ctx, cfg)
+        # 2. Find step in registry
+        step_info = all_steps.get(step_name)
+        if not step_info:
+            continue
             
-            def make_output_fn(fn, cfg):
-                if fn is None:
-                    return None
-                return lambda ctx: fn(ctx, cfg)
+        # 3. Create partials for dependency injection (Brecha #4)
+        step_fn = partial(step_info.step_fn, config=step_config)
+        
+        output_fn = None
+        if step_info.output_fn:
+            output_fn = partial(step_info.output_fn, config=step_config)
             
-            steps.append(NamedStep(
-                name=step_name,
-                fn=make_step_fn(step_fn, step_config),
-                output_fn=make_output_fn(output_fn, step_config),
-            ))
+        steps.append(NamedStep(
+            name=step_name,
+            fn=step_fn,
+            output_fn=output_fn
+        ))
+        
     return Pipeline(steps, observers)
 
 class MediaOrchestrator:

@@ -16,9 +16,12 @@ class TranscribeConfig:
     speakers: Optional[int] = None
     model: str = 'openai/whisper-base'
     output_keys: Tuple[str, str] = ('transcript_txt', 'transcript_json')
+    enabled: bool = True
 
 @timer('transcribe')
 def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineContext:
+    if not config.enabled:
+        return ctx
     audio = ctx.outputs.get('enhanced') or ctx.outputs.get('normalized') or ctx.src
     
     if config.backend == 'assemblyai':
@@ -46,6 +49,8 @@ def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineC
 
 
 def transcribe_output_fn(ctx: PipelineContext, config: TranscribeConfig) -> Dict[str, Path]:
+    if not config.enabled:
+        return {}
     audio = ctx.outputs.get('enhanced') or ctx.outputs.get('normalized') or ctx.src
     txt_path = audio.parent / f"{audio.stem}_whisper.txt"
     jsn_path = audio.parent / f"{audio.stem}_whisper.json"
@@ -53,4 +58,11 @@ def transcribe_output_fn(ctx: PipelineContext, config: TranscribeConfig) -> Dict
 
 
 from wx41.steps import register_step
-register_step("transcribe", transcribe_step, transcribe_output_fn)
+register_step(
+    "transcribe", 
+    transcribe_step, 
+    transcribe_output_fn,
+    optional=False,
+    description="Transcribe audio to text and JSON timestamps",
+    config_class=TranscribeConfig
+)

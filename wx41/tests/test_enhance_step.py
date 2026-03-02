@@ -12,15 +12,18 @@ def test_enhance_step_produces_enhanced_output(tmp_path, monkeypatch):
         dst.write_text("enhanced_audio", encoding="utf-8")
         return True
     
-    monkeypatch.setattr("wx41.audio_enhance.apply_clearvoice", fake_enhance)
+    import wx41.steps.enhance
+    monkeypatch.setattr("wx41.steps.enhance.apply_clearvoice", fake_enhance)
     
     from wx41.steps.enhance import EnhanceConfig
-    config = PipelineConfig(settings={"enhance": EnhanceConfig()})
+    step_config = EnhanceConfig()
+    config = PipelineConfig(settings={"enhance": step_config})
     
     orchestrator = MediaOrchestrator(config, [])
     ctx = orchestrator.run(audio)
     
-    assert "enhanced" in ctx.outputs, f"Expected 'enhanced' in outputs, got: {ctx.outputs.keys()}"
-    assert ctx.outputs["enhanced"].exists(), f"Enhanced file should exist"
-    content = ctx.outputs["enhanced"].read_text(encoding="utf-8")
+    out_key = step_config.output_keys[0]
+    assert out_key in ctx.outputs, f"Expected '{out_key}' in outputs, got: {ctx.outputs.keys()}"
+    assert ctx.outputs[out_key].exists(), f"Enhanced file should exist"
+    content = ctx.outputs[out_key].read_text(encoding="utf-8")
     assert content == "enhanced_audio", f"Expected 'enhanced_audio', got: {content!r}"
