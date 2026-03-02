@@ -30,9 +30,9 @@ def test_resume_skips_existing_outputs(tmp_path, monkeypatch):
 
     original_content = ctx1.outputs[transcribe_cfg.output_keys[0]].read_text(encoding="utf-8")
 
-    ctx2 = orchestrator.run(audio, resume=True)
+    ctx2 = orchestrator.run(audio)
     assert call_count["n"] == 1, (
-        f"Segunda llamada con resume=True no debe ejecutar whisper, pero n={call_count['n']}"
+        f"Segunda llamada debe usar resume por defecto, pero n={call_count['n']}"
     )
     for key in transcribe_cfg.output_keys:
         assert ctx2.outputs[key].exists(), f"{key} debe existir en resume"

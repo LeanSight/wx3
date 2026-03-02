@@ -26,13 +26,13 @@ class Pipeline:
     def _notify(self, action: Callable[[PipelineObserver], None]) -> None:
         for ob in self._observers: action(ob)
 
-    def run(self, ctx: PipelineContext, dry_run: bool = False, resume: bool = False) -> PipelineContext:
+    def run(self, ctx: PipelineContext, dry_run: bool = False) -> PipelineContext:
         names = [s.name for s in self._steps]
         self._notify(lambda ob: ob.on_pipeline_start(names, ctx))
         if dry_run:
             self._notify(lambda ob: ob.on_pipeline_end(ctx))
             return ctx
-        should_resume = resume and not ctx.force
+        should_resume = not ctx.force
         for step in self._steps:
             self._notify(lambda ob: ob.on_step_start(step.name, ctx))
             if should_resume and step.output_fn:
@@ -78,7 +78,7 @@ class MediaOrchestrator:
         self._observers = observers
         self._state_path = state_path
 
-    def run(self, src: Path, dry_run: bool = False, resume: bool = False) -> PipelineContext:
+    def run(self, src: Path, dry_run: bool = False) -> PipelineContext:
         from wx41.ui.interrupt import InterruptHandler
         ctx = PipelineContext(src=src, force=self._config.force, dry_run=dry_run)
         pipeline = build_audio_pipeline(self._config, self._observers)
@@ -89,7 +89,7 @@ class MediaOrchestrator:
             handler.install(ctx)
         
         try:
-            return pipeline.run(ctx, dry_run=dry_run, resume=resume)
+            return pipeline.run(ctx, dry_run=dry_run)
         except KeyboardInterrupt:
             ctx = dataclasses.replace(ctx, interrupted=True)
             return ctx
