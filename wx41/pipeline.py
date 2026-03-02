@@ -64,11 +64,26 @@ def build_audio_pipeline(config: PipelineConfig, observers: List[PipelineObserve
     return Pipeline(steps, observers)
 
 class MediaOrchestrator:
-    def __init__(self, config: PipelineConfig, observers: List[PipelineObserver]):
+    def __init__(self, config: PipelineConfig, observers: List[PipelineObserver], state_path: Optional[Path] = None):
         self._config = config
         self._observers = observers
+        self._state_path = state_path
 
     def run(self, src: Path, dry_run: bool = False, resume: bool = False) -> PipelineContext:
+        from wx41.ui.interrupt import InterruptHandler
         ctx = PipelineContext(src=src, force=self._config.force, dry_run=dry_run)
         pipeline = build_audio_pipeline(self._config, self._observers)
-        return pipeline.run(ctx, dry_run=dry_run, resume=resume)
+        
+        handler = None
+        if self._state_path:
+            handler = InterruptHandler(self._state_path)
+            handler.install(ctx)
+        
+        try:
+            return pipeline.run(ctx, dry_run=dry_run, resume=resume)
+        except KeyboardInterrupt:
+            ctx = dataclasses.replace(ctx, interrupted=True)
+            return ctx
+        finally:
+            if handler:
+                handler.uninstall()

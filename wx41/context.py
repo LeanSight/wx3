@@ -12,6 +12,7 @@ class PipelineContext:
     src: Path
     force: bool = False
     dry_run: bool = False
+    interrupted: bool = False
     outputs: Dict[str, Path] = field(default_factory=dict)
     timings: Dict[str, float] = field(default_factory=dict)
     step_progress: Optional[Callable[[int, int], None]] = None
