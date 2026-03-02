@@ -32,9 +32,10 @@ class Pipeline:
         if dry_run:
             self._notify(lambda ob: ob.on_pipeline_end(ctx))
             return ctx
+        should_resume = resume and not ctx.force
         for step in self._steps:
             self._notify(lambda ob: ob.on_step_start(step.name, ctx))
-            if resume and step.output_fn:
+            if should_resume and step.output_fn:
                 outputs_needed = step.output_fn(ctx)
                 if outputs_needed and all(p.exists() for p in outputs_needed.values()):
                     new_outputs = {**ctx.outputs, **outputs_needed}
