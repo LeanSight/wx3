@@ -5,6 +5,27 @@ Ref: devdocs/standard-atdd-tdd.md, devdocs/arquitectura.md
 
 ---
 
+## Estado de Implementación (2026-03-02)
+
+| Objetivo | Estado | Archivos |
+|----------|--------|----------|
+| Encadenado de steps | ✅ IMPLEMENTADO | pipeline.py |
+| Configuración declarativa (dinámica) | ✅ IMPLEMENTADO | steps/__init__.py (STEP_REGISTRY) |
+| Visualización UI | ✅ IMPLEMENTADO | ui/progress.py |
+| Resumability (default, force override) | ✅ IMPLEMENTADO | pipeline.py |
+| Dry run | ✅ IMPLEMENTADO | pipeline.py, context.py |
+| Control+C graceful | ✅ IMPLEMENTADO | ui/interrupt.py |
+| Lazy imports | ✅ IMPLEMENTADO | transcribe_aai.py, transcribe_whisper.py, model_cache.py |
+| CLI con opciones | ✅ IMPLEMENTADO | cli.py |
+
+### Tests
+```
+pytest wx41/tests/ -v
+11 passed
+```
+
+---
+
 ## Objetivos wx41
 
 Investigar la forma más idiomática y pythónica en 2026 de programar, y reimplementar desde cero pipeline.py y cli.py con soporte para:
@@ -25,9 +46,11 @@ Investigar la forma más idiomática y pythónica en 2026 de programar, y reimpl
 class PipelineContext:
     src: Path
     force: bool = False
-    outputs: Dict[str, Path] = field(default_factory=dict) # Mapa: nombre_pieza -> Path
+    dry_run: bool = False
+    interrupted: bool = False
+    outputs: Dict[str, Path] = field(default_factory=dict)
     timings: Dict[str, float] = field(default_factory=dict)
-    step_progress: Optional[Callable] = None
+    step_progress: Optional[Callable[[int, int], None]] = None
 ```
 
 ### PipelineConfig (Transporte)
@@ -89,25 +112,32 @@ assert ctx.outputs["transcript_txt"].exists()
 
 ---
 
-## 3. Tabla de Registro de Steps (Para S2-S8)
+## 3. Tabla de Registro de Steps
 
-| Step | Nombre Output en `ctx.outputs` | Dependencia (Input) | Config Específica |
-|------|-------------------------------|---------------------|-------------------|
-| `normalize` | `"normalized"` | `ctx.src` | Ninguna |
-| `enhance` | `"enhanced"` | `"normalized"` o `ctx.src` | Ninguna |
-| `transcribe` | `"transcript_txt/json"`| `"enhanced"` o `"normalized"` o `ctx.src` | `TranscribeConfig` |
-| `srt` | `"srt"` | `"transcript_json"` | `SRTConfig` |
-| `black_video`| `"video_out"` | Cualquiera de audio anterior | Ninguna |
-| `compress` | `"video_compressed"` | `"video_out"` | `CompressConfig` |
+| Step | Nombre Output en `ctx.outputs` | Dependencia (Input) | Estado |
+|------|-------------------------------|---------------------|--------|
+| `normalize` | `"normalized"` | `ctx.src` | ⏳ PENDIENTE |
+| `enhance` | `"enhanced"` | `"normalized"` o `ctx.src` | ⏳ PENDIENTE |
+| `transcribe` | `"transcript_txt/json"`| `"enhanced"` o `"normalized"` o `ctx.src` | ✅ IMPLEMENTADO |
+| `srt` | `"srt"` | `"transcript_json"` | ⏳ PENDIENTE |
+| `black_video`| `"video_out"` | Cualquiera de audio anterior | ⏳ PENDIENTE |
+| `compress` | `"video_compressed"` | `"video_out"` | ⏳ PENDIENTE |
 
 ---
 
 ## 4. Dinamismo en el Pipeline
 
+Implementado via **Step Registry** (`steps/__init__.py`):
+- `STEP_REGISTRY`: Dict[str, Callable] - funciones de steps
+- `STEP_OUTPUT_FN_REGISTRY`: Dict[str, Callable] - funciones de output
+- `register_step(name, fn, output_fn)`: registra un step dinámicamente
+
 Al construir el pipeline (`build_pipeline`):
-1. El builder mira `config.settings`.
-2. Si existe `settings["normalize"]`, añade el step. Si no, no.
-3. El `skip_fn` solo se usa si el step existe pero el usuario quiere saltarlo en runtime sin desconfigurarlo.
+1. El builder itera sobre `config.settings`
+2. Para cada entry en settings, busca en STEP_REGISTRY
+3. Si existe, crea NamedStep con la función y su output_fn
+4. Resumability: si outputs existen en disco, salta el step
+5. Force: con force=True, ignora resumability y ejecuta siempre
 
 ---
 
