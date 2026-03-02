@@ -1,7 +1,7 @@
 from pathlib import Path
 import pytest
 from wx41.context import PipelineContext, PipelineConfig
-from wx41.pipeline import MediaOrchestrator
+from wx41.wx4 import MediaOrchestrator
 
 def test_compress_step_produces_compressed_file(tmp_path, monkeypatch):
     video = tmp_path / "video.mp4"

@@ -1,7 +1,7 @@
 import io
 from pathlib import Path
 import pytest
-from wx41.pipeline import MediaOrchestrator
+from wx41.wx4 import MediaOrchestrator
 from wx41.context import PipelineConfig
 from wx41.steps.transcribe import TranscribeConfig
 from wx41.ui.progress import ProgressConsole

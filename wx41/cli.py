@@ -3,7 +3,7 @@ import dataclasses
 from pathlib import Path
 from typing import Optional, Dict, Any, Type
 from wx41.context import PipelineConfig
-from wx41.pipeline import MediaOrchestrator
+from wx41.wx4 import MediaOrchestrator
 from wx41.steps import get_all_steps, StepInfo
 
 def create_cli():

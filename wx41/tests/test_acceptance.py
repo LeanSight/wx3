@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from wx41.pipeline import MediaOrchestrator
+from wx41.wx4 import MediaOrchestrator
 from wx41.context import PipelineConfig
 from wx41.steps.transcribe import TranscribeConfig
 
@@ -191,7 +191,7 @@ class TestCLIOptionality:
     def test_cli_configures_step_via_dynamic_flags(self, tmp_path, monkeypatch):
         from click.testing import CliRunner
         from wx41.cli import main
-        from wx41.pipeline import MediaOrchestrator
+        from wx41.wx4 import MediaOrchestrator
         
         runner = CliRunner()
         audio = tmp_path / "audio.m4a"

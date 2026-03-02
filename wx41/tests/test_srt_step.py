@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import pytest
 from wx41.context import PipelineContext, PipelineConfig
-from wx41.pipeline import MediaOrchestrator
+from wx41.wx4 import MediaOrchestrator
 
 def test_srt_step_produces_srt_file(tmp_path):
     audio = tmp_path / "audio.m4a"

@@ -20,22 +20,30 @@ def compress_step(ctx: PipelineContext, config: CompressConfig) -> PipelineConte
     if not config.enabled:
         return ctx
         
-    video = ctx.outputs.get("video")
+    # Priority for Video source: video (from black_video) > src
+    video = ctx.outputs.get("video") or ctx.src
     if not video or not video.exists():
-        raise RuntimeError("Compress step requires a video output from previous steps.")
+        raise RuntimeError("Compress step requires a video input.")
         
-    out_path = predict_output_path(ctx.src, "compress", config.output_keys[0])
+    # Priority for Audio source: enhanced > normalized
+    # Only pass audio_path if it's different from video's internal audio 
+    # (though for simplicity we can always pass it if one of them exists)
+    audio = ctx.outputs.get("enhanced") or ctx.outputs.get("normalized")
+    
+    out_path = predict_output_path(video, "compress", config.output_keys[0])
     
     compress_video(
         video, 
         out_path, 
         crf=config.crf, 
         preset=config.preset,
-        progress_callback=ctx.step_progress
+        progress_callback=ctx.step_progress,
+        audio_path=audio
     )
     
     new_outputs = {**ctx.outputs, config.output_keys[0]: out_path}
     return dataclasses.replace(ctx, outputs=new_outputs)
+
 
 
 def compress_output_fn(ctx: PipelineContext, config: CompressConfig) -> Dict[str, Path]:

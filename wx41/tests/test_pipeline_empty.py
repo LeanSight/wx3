@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from wx41.pipeline import MediaOrchestrator
+from wx41.wx4 import MediaOrchestrator
 from wx41.context import PipelineConfig
 
 

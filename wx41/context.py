@@ -15,6 +15,7 @@ class PipelineConfig:
 @dataclass(frozen=True)
 class PipelineContext:
     src: Path
+    media_type: str = "audio"
     force: bool = False
     dry_run: bool = False
     interrupted: bool = False

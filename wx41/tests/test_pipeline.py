@@ -1,7 +1,7 @@
 from pathlib import Path
 import dataclasses
 import pytest
-from wx41.pipeline import Pipeline, NamedStep
+from wx41.pipeline_engine import Pipeline, NamedStep
 from wx41.context import PipelineContext
 
 class TestPipelineGenericCore:
