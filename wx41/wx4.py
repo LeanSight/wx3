@@ -48,7 +48,7 @@ def _instantiate_step(step_name: str, config: PipelineConfig, all_steps: Dict[st
 def build_audio_pipeline(config: PipelineConfig, observers: List[PipelineObserver]) -> Pipeline:
     all_steps = get_all_steps()
     # Explicit order for Audio
-    sequence = ["normalize", "enhance", "transcribe", "srt", "black_video", "compress"]
+    sequence = ["normalize", "enhance", "transcribe", "srt", "black_video"]
     
     steps = []
     for name in sequence:

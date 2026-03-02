@@ -15,10 +15,16 @@ class TestStepContract:
         from wx41.steps import STEP_REGISTRY, get_all_steps
         import dataclasses
         
-        audio = tmp_path / "audio.m4a"
+        # Determine extension based on step to ensure it's included in the pipeline
+        ext = ".m4a"
+        if step_name == "compress":
+            ext = ".mp4"
+            
+        audio = tmp_path / f"audio{ext}"
         audio.touch()
         
         # Simulador Universal: Mockea la infraestructura para TODOS los steps
+
         for s_name, s_info in get_all_steps().items():
             def make_mock(name, info):
                 def mock_fn(ctx, config):
@@ -54,10 +60,16 @@ class TestStepContract:
         from wx41.steps import STEP_REGISTRY, get_all_steps
         import dataclasses
         
-        audio = tmp_path / "audio.m4a"
+        # Determine extension based on step to ensure it's included in the pipeline
+        ext = ".m4a"
+        if step_name == "compress":
+            ext = ".mp4"
+            
+        audio = tmp_path / f"audio{ext}"
         audio.touch()
         
         call_counts = {name: 0 for name in get_all_steps().keys()}
+
         
         for s_name, s_info in get_all_steps().items():
             def make_mock(name, info):
@@ -95,10 +107,16 @@ class TestStepContract:
         if not target_info.optional:
             pytest.skip(f"El step {step_name} no es opcional")
             
-        audio = tmp_path / "audio.m4a"
+        # Determine extension based on step to ensure it's included in the pipeline
+        ext = ".m4a"
+        if step_name == "compress":
+            ext = ".mp4"
+            
+        audio = tmp_path / f"audio{ext}"
         audio.touch()
         
         call_counts = {name: 0 for name in get_all_steps().keys()}
+
         
         for s_name, s_info in get_all_steps().items():
             def make_mock(name, info):
@@ -126,10 +144,16 @@ class TestStepContract:
         from wx41.steps import STEP_REGISTRY, get_all_steps, get_step_info
         import dataclasses
         
-        audio = tmp_path / "audio.m4a"
+        # Determine extension based on step to ensure it's included in the pipeline
+        ext = ".m4a"
+        if step_name == "compress":
+            ext = ".mp4"
+            
+        audio = tmp_path / f"audio{ext}"
         audio.touch()
         
         call_counts = {name: 0 for name in get_all_steps().keys()}
+
         
         for s_name, s_info in get_all_steps().items():
             def make_mock(name, info):
