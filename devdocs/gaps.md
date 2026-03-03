@@ -1,7 +1,7 @@
 # Brechas: wx41.md vs plan_wx41.md vs Implementacion
 
 Fecha: 2026-03-02
-Estado: 1 PENDIENTE
+Estado: TODAS RESUELTAS
 
 ---
 
@@ -180,4 +180,4 @@ class TestMetaATCLI:
 | 3 | metadata-driven → disk-based | ✅ RESUELTA | `plan_wx41.md` | Descripcion incorrecta | Medio |
 | 6 | Modulos no documentados | ✅ RESUELTA | `wx41.md` | Completado | Bajo |
 | 7 | MediaType clase vs Enum | ✅ RESUELTA | `wx41.md` | Completado | Bajo |
-| 8 | Meta-AT coverage incompleto | PENDIENTE | `test_acceptance.py` | Incompleto | **Alto** |
+| 8 | Meta-AT coverage incompleto | ✅ RESUELTA | `test_acceptance.py` | Completado | **Alto** |
