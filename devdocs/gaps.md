@@ -14,6 +14,20 @@ Estado: 1 PENDIENTE
 
 **Impacto**: Meta-AT incompleto. Falta coverage de integration con fixture real para todos los steps.
 
+### Objetivo: Cobertura completa de plan_wx41.md en ambos modelos
+
+| Objetivo (plan_wx41.md) | Meta-AT (Mocks) | Meta-AT (Fixture Real) |
+|--------------------------|-----------------|------------------------|
+| Encadenado de steps | `TestStepContract::test_step_cli_resumability` | `test_step_produces_real_outputs` |
+| Configuracion declarativa dinamica | `TestCLIOptionality::test_cli_configures_step_via_dynamic_flags` | `test_cli_config_flags_propagate` |
+| Visualizacion UI | `test_ui_shows_step_name` (unit) | `test_cli_output_contains_step_names` |
+| Resumability (disk-based) | `TestStepContract::test_step_cli_resumability` | `test_step_produces_real_outputs` (verifica archivos) |
+| Dry run | `TestStepContract::test_step_cli_dry_run` | `test_cli_dry_run_no_files_created` |
+| Ctrl+C cleanup | (unit test en `pipeline_engine.py`) | - |
+| CLI Agnóstico | `TestCLIOptionality::test_cli_help_shows_dynamic_options` | `test_cli_flags_work_for_step` |
+| StepInfo Registry unificado | `TestStepOptionality::test_steps_registry_has_optional_field` | (implicitamente validado) |
+| Meta-AT Registry-Driven | `TestStepContract` (existente) | `TestMetaATWithRealFixture` (nuevo) |
+
 ### Diseño (propuesta)
 
 ```python
