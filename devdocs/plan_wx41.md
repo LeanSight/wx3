@@ -9,12 +9,12 @@ Ref: devdocs/standard-atdd-tdd.md, devdocs/arquitectura.md, devdocs/meta_at_desi
 
 | Objetivo | Estado | Archivos |
 |----------|--------|----------|
-| Encadenado de steps | ✅ IMPLEMENTADO | pipeline.py |
+| Encadenado de steps | ✅ IMPLEMENTADO | pipeline_engine.py |
 | Configuración declarativa dinámica | ✅ IMPLEMENTADO | steps/__init__.py (STEP_REGISTRY) |
 | Visualización UI | ✅ IMPLEMENTADO | ui/progress.py |
-| Resumability (metadata-driven) | ✅ IMPLEMENTADO | pipeline.py |
-| Dry run | ✅ IMPLEMENTADO | pipeline.py, context.py |
-| Control+C graceful | ✅ IMPLEMENTADO | ui/interrupt.py |
+| Resumability (disk-based) | ✅ IMPLEMENTADO | pipeline_engine.py |
+| Dry run | ✅ IMPLEMENTADO | pipeline_engine.py, context.py |
+| Ctrl+C cleanup | ✅ IMPLEMENTADO | pipeline_engine.py (auto-cleanup on interrupt) |
 | CLI Agnóstico (Auto-discovery) | ✅ IMPLEMENTADO | cli.py |
 | StepInfo Registry unificado | ✅ IMPLEMENTADO | steps/__init__.py |
 | Meta-AT Registry-Driven | ✅ IMPLEMENTADO | tests/test_acceptance.py |
