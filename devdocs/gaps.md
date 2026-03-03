@@ -48,5 +48,5 @@ Modulos en la implementacion no documentados en la arquitectura:
 | 5 | update_ctx letra muerta | ✅ RESUELTA (via BRECHA 1) | - | Bug | **Alto** |
 | 2 | pipeline.py → pipeline_engine.py | ✅ RESUELTA | `plan_wx41.md` | Nombre incorrecto | Medio |
 | 3 | metadata-driven → disk-based | ✅ RESUELTA | `plan_wx41.md` | Descripcion incorrecta | Medio |
-| 6 | Modulos no documentados | PENDIENTE | `wx41.md` | Omision | Bajo |
-| 7 | MediaType clase vs Enum | PENDIENTE | `wx41.md` | Imprecision | Bajo |
+| 6 | Modulos no documentados | ✅ RESUELTA | `wx41.md` | Completado | Bajo |
+| 7 | MediaType clase vs Enum | ✅ RESUELTA | `wx41.md` | Completado | Bajo |
