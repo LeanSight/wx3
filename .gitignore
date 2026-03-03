@@ -16,3 +16,5 @@ checkpoints/
 .enhance_meeting_cache.json
 .claude/
 wx41/tests/fixtures/
+.tldr/
+.tldrignore
