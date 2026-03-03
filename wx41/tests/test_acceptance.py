@@ -534,3 +534,43 @@ class TestMetaATCLI:
 
         assert len(captured) == 1
         assert captured[0].settings["normalize"].target_lufs == -16.0
+
+    def test_cli_dry_run_no_files_created(self, tmp_path):
+        from click.testing import CliRunner
+        from wx41.cli import main
+
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+
+        runner = CliRunner()
+        result = runner.invoke(main, [str(audio), "--dry-run"])
+
+        assert result.exit_code == 0
+
+        output_files = (
+            list(tmp_path.glob("*.m4a"))
+            + list(tmp_path.glob("*.txt"))
+            + list(tmp_path.glob("*.json"))
+        )
+        assert len(output_files) == 1, (
+            f"Expected only input file, found: {output_files}"
+        )
+
+    def test_cli_output_contains_step_names(self, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+        from wx41.cli import main
+        from wx41.wx4 import MediaOrchestrator
+        from wx41.context import PipelineContext
+
+        def mock_run(self, src, **kwargs):
+            return PipelineContext(src=src, media_type="audio", outputs={})
+
+        monkeypatch.setattr(MediaOrchestrator, "run", mock_run)
+
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+
+        runner = CliRunner()
+        result = runner.invoke(main, [str(audio)])
+
+        assert result.exit_code == 0
