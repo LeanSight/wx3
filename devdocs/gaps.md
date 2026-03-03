@@ -43,6 +43,63 @@ class TestMetaATWithRealFixture:
 
 **Principio**: Same parametrize structure as mock tests, but using `audio_file` fixture.
 
+### 2. Test de CLI con argumentos dinamicos
+
+```python
+class TestMetaATCLI:
+    @pytest.mark.parametrize("step_name", get_all_steps().keys())
+    def test_cli_disable_flag_works(self, step_name, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+        from wx41.cli import main
+        
+        step_info = get_step_info(step_name)
+        if not step_info.optional:
+            pytest.skip(f"{step_name} no es opcional")
+        
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+        
+        runner = CliRunner()
+        result = runner.invoke(main, [str(audio), f"--no-{step_name}"])
+        
+        assert result.exit_code == 0, f"CLI falló: {result.output}"
+        
+        cfg = step_info.config_class()
+        for key in cfg.output_keys:
+            expected = predict_output_path(audio, step_name, key)
+            assert not expected.exists(), f"{step_name} deberia estar deshabilitado"
+    
+    @pytest.mark.parametrize("step_name,field_name", [
+        (name, f.name) 
+        for name in get_all_steps().keys() 
+        if (info := get_step_info(name)) and info.config_class
+        for f in fields(info.config_class) 
+        if f.name not in ("enabled", "output_keys")
+    ])
+    def test_cli_config_flags_propagate(self, step_name, field_name, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+        from wx41.cli import main
+        from wx41.wx4 import MediaOrchestrator
+        
+        captured = []
+        def capture_run(self, src, **kwargs):
+            captured.append(self._config.settings.get(step_name))
+            from wx41.context import PipelineContext
+            return PipelineContext(src=src)
+        
+        monkeypatch.setattr(MediaOrchestrator, "run", capture_run)
+        
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+        
+        runner = CliRunner()
+        runner.invoke(main, [str(audio), f"--{step_name}-{field_name}", "test_value"])
+        
+        assert len(captured) == 1
+        cfg = captured[0]
+        assert getattr(cfg, field_name, None) == "test_value"
+```
+
 ---
 
 ## Resumen por prioridad
