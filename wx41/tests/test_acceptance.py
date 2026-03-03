@@ -509,3 +509,28 @@ class TestMetaATCLI:
         assert f"--no-{step_name}" in result.output or step_name not in result.output, (
             f"CLI should accept --no-{step_name}"
         )
+
+    def test_cli_config_flags_propagate(self, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+        from wx41.cli import main
+        from wx41.wx4 import MediaOrchestrator
+        from wx41.context import PipelineContext
+
+        captured = []
+
+        def capture_run(self, src, **kwargs):
+            captured.append(self._config)
+            return PipelineContext(src=src)
+
+        monkeypatch.setattr(MediaOrchestrator, "run", capture_run)
+
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+
+        runner = CliRunner()
+        runner.invoke(
+            main, [str(audio), "--normalize-target-lufs", "-16.0", "--dry-run"]
+        )
+
+        assert len(captured) == 1
+        assert captured[0].settings["normalize"].target_lufs == -16.0
