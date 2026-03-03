@@ -479,12 +479,33 @@ class TestMetaATWithRealFixture:
             assert ctx.outputs[key].exists(), (
                 f"File for key '{key}' not created at {ctx.outputs[key]}"
             )
-            assert ctx.outputs[key].exists(), (
-                f"File for key '{key}' not created at {ctx.outputs[key]}"
-            )
-            assert ctx.outputs[key].exists(), (
-                f"File for key '{key}' not created at {ctx.outputs[key]}"
-            )
-            assert ctx.outputs[key].exists(), (
-                f"File for key '{key}' not created at {ctx.outputs[key]}"
-            )
+
+
+class TestMetaATCLI:
+    @pytest.mark.parametrize(
+        "step_name", ["normalize", "enhance", "compress", "black_video"]
+    )
+    def test_cli_disable_flag_works(self, step_name, tmp_path, monkeypatch):
+        from click.testing import CliRunner
+        from wx41.cli import main
+
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+
+        def mock_run(self, src, **kwargs):
+            from wx41.context import PipelineContext
+
+            return PipelineContext(src=src, media_type="audio")
+
+        from wx41.wx4 import MediaOrchestrator
+
+        monkeypatch.setattr(MediaOrchestrator, "run", mock_run)
+
+        runner = CliRunner()
+        result = runner.invoke(main, [str(audio), "--dry-run", f"--no-{step_name}"])
+
+        assert result.exit_code == 0, f"CLI failed: {result.output}"
+
+        assert f"--no-{step_name}" in result.output or step_name not in result.output, (
+            f"CLI should accept --no-{step_name}"
+        )
