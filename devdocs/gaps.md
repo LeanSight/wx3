@@ -116,6 +116,59 @@ class TestMetaATCLI:
 
 ---
 
+## Plan Incremental (ATDD/TDD)
+
+### Slice 1: Meta-AT con Fixture Real - test_step_produces_real_outputs
+
+**Comportamiento**: Cada step debe producir outputs reales en disco cuando se ejecuta con fixture de audio real.
+
+**Ciclo**:
+1. Escribir AT en `test_acceptance.py` → RED
+2. Mejorar mensaje de fallo
+3. Ejecutar para confirmar RED
+4. Implementar produccion minima (si falta)
+5. GREEN → commit + push
+
+### Slice 2: Meta-AT CLI - test_cli_disable_flag_works
+
+**Comportamiento**: CLI debe aceptar `--no-{step}` y deshabilitar el step correspondiente.
+
+**Ciclo**:
+1. Escribir AT → RED
+2. Mejorar mensaje de fallo
+3. Ejecutar para confirmar RED
+4. Implementar si falta
+5. GREEN → commit + push
+
+### Slice 3: Meta-AT CLI - test_cli_config_flags_propagate
+
+**Comportamiento**: CLI debe propagar `--{step}-{field}` al config del step.
+
+**Ciclo**:
+1. Escribir AT → RED
+2. Mejorar mensaje de fallo
+3. Ejecutar para confirmar RED
+4. Implementar si falta
+5. GREEN → commit + push
+
+### Slice 4: Meta-AT - test_cli_dry_run_no_files_created
+
+**Comportamiento**: CLI con `--dry-run` no debe crear archivos.
+
+**Ciclo**:
+1. Escribir AT → RED
+2. GREEN → commit + push
+
+### Slice 5: Meta-AT - test_cli_output_contains_step_names
+
+**Comportamiento**: Output del CLI debe mostrar nombres de steps ejecutados.
+
+**Ciclo**:
+1. Escribir AT → RED
+2. GREEN → commit + push
+
+---
+
 ## Resumen por prioridad
 
 | # | Brecha | Estado | Donde corregir | Tipo | Impacto |
