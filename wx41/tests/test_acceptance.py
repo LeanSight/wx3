@@ -444,3 +444,47 @@ class TestPipelineWalkingSkeleton:
             assert ctx.outputs[key].exists()
             content = ctx.outputs[key].read_text(encoding="utf-8")
             assert len(content) > 0
+
+
+class TestMetaATWithRealFixture:
+    def test_audio_pipeline_produces_all_outputs(self, audio_file):
+        from wx41.wx4 import MediaOrchestrator
+        from wx41.context import PipelineConfig
+        from wx41.steps.transcribe import TranscribeConfig
+        from wx41.steps.srt import SRTConfig
+        from wx41.steps.black_video import BlackVideoConfig
+
+        try:
+            import torch
+        except ModuleNotFoundError:
+            pytest.skip("torch not installed")
+
+        settings = {
+            "transcribe": TranscribeConfig(backend="whisper"),
+            "srt": SRTConfig(),
+            "black_video": BlackVideoConfig(),
+        }
+
+        config = PipelineConfig(settings=settings)
+        orchestrator = MediaOrchestrator(config, [])
+
+        ctx = orchestrator.run(audio_file)
+
+        expected_keys = ["transcript_txt", "transcript_json", "srt", "video"]
+
+        for key in expected_keys:
+            assert key in ctx.outputs, (
+                f"Key '{key}' not in outputs. Available: {list(ctx.outputs.keys())}"
+            )
+            assert ctx.outputs[key].exists(), (
+                f"File for key '{key}' not created at {ctx.outputs[key]}"
+            )
+            assert ctx.outputs[key].exists(), (
+                f"File for key '{key}' not created at {ctx.outputs[key]}"
+            )
+            assert ctx.outputs[key].exists(), (
+                f"File for key '{key}' not created at {ctx.outputs[key]}"
+            )
+            assert ctx.outputs[key].exists(), (
+                f"File for key '{key}' not created at {ctx.outputs[key]}"
+            )
