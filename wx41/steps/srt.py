@@ -150,6 +150,8 @@ def srt_output_fn(ctx: PipelineContext, config: SRTConfig) -> Dict[str, Path]:
     return {config.output_keys[0]: out_path}
 
 
+from wx41.steps import ConfigVariant
+
 register_step(
     "srt",
     srt_step,
@@ -157,4 +159,15 @@ register_step(
     optional=True,
     description="Generate SRT subtitles from transcription JSON",
     config_class=SRTConfig,
+    needs_audio_fixture=True,
+    config_variants=(
+        ConfigVariant(
+            name="mode_words",
+            config=SRTConfig(mode="words", max_chars=10, generate_both=False),
+        ),
+        ConfigVariant(
+            name="mode_sentences",
+            config=SRTConfig(mode="sentences", max_chars=20, generate_both=True),
+        ),
+    ),
 )

@@ -9,37 +9,38 @@ from wx41.transcribe_aai import transcribe_assemblyai
 from wx41.transcribe_whisper import transcribe_whisper
 from wx41.steps import register_step, predict_output_path
 
+
 @dataclass(frozen=True)
 class TranscribeConfig:
-
-    backend: str = 'assemblyai'
+    backend: str = "assemblyai"
     api_key: Optional[str] = None
     language: Optional[str] = None
     speakers: Optional[int] = None
-    model: str = 'openai/whisper-base'
-    output_keys: Tuple[str, str] = ('transcript_txt', 'transcript_json')
+    model: str = "openai/whisper-base"
+    output_keys: Tuple[str, str] = ("transcript_txt", "transcript_json")
     enabled: bool = True
 
-@timer('transcribe')
+
+@timer("transcribe")
 def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineContext:
     if not config.enabled:
         return ctx
-    audio = ctx.outputs.get('enhanced') or ctx.outputs.get('normalized') or ctx.src
-    
+    audio = ctx.outputs.get("enhanced") or ctx.outputs.get("normalized") or ctx.src
+
     txt_path = predict_output_path(ctx.src, "transcribe", config.output_keys[0])
     jsn_path = predict_output_path(ctx.src, "transcribe", config.output_keys[1])
-    
-    if config.backend == 'assemblyai':
+
+    if config.backend == "assemblyai":
         txt, jsn = transcribe_assemblyai(
-            audio, 
-            api_key=config.api_key, 
-            lang=config.language, 
+            audio,
+            api_key=config.api_key,
+            lang=config.language,
             speakers=config.speakers,
             progress_callback=ctx.step_progress,
             txt_path=txt_path,
-            json_path=jsn_path
+            json_path=jsn_path,
         )
-    elif config.backend == 'whisper':
+    elif config.backend == "whisper":
         txt, jsn = transcribe_whisper(
             audio,
             api_key=config.api_key,
@@ -48,16 +49,22 @@ def transcribe_step(ctx: PipelineContext, config: TranscribeConfig) -> PipelineC
             progress_callback=ctx.step_progress,
             model=config.model,
             txt_path=txt_path,
-            json_path=jsn_path
+            json_path=jsn_path,
         )
     else:
-        raise RuntimeError(f'Backend {config.backend} not implemented yet')
+        raise RuntimeError(f"Backend {config.backend} not implemented yet")
 
-    new_outputs = {**ctx.outputs, config.output_keys[0]: txt, config.output_keys[1]: jsn}
+    new_outputs = {
+        **ctx.outputs,
+        config.output_keys[0]: txt,
+        config.output_keys[1]: jsn,
+    }
     return dataclasses.replace(ctx, outputs=new_outputs)
 
 
-def transcribe_output_fn(ctx: PipelineContext, config: TranscribeConfig) -> Dict[str, Path]:
+def transcribe_output_fn(
+    ctx: PipelineContext, config: TranscribeConfig
+) -> Dict[str, Path]:
     if not config.enabled:
         return {}
     txt_path = predict_output_path(ctx.src, "transcribe", config.output_keys[0])
@@ -65,12 +72,23 @@ def transcribe_output_fn(ctx: PipelineContext, config: TranscribeConfig) -> Dict
     return {config.output_keys[0]: txt_path, config.output_keys[1]: jsn_path}
 
 
-register_step(
+from wx41.steps import register_step, predict_output_path, ConfigVariant
 
-    "transcribe", 
-    transcribe_step, 
+
+register_step(
+    "transcribe",
+    transcribe_step,
     transcribe_output_fn,
     optional=False,
     description="Transcribe audio to text and JSON timestamps",
-    config_class=TranscribeConfig
+    config_class=TranscribeConfig,
+    needs_audio_fixture=True,
+    config_variants=(
+        ConfigVariant(
+            name="backend_whisper", config=TranscribeConfig(backend="whisper")
+        ),
+        ConfigVariant(
+            name="backend_assemblyai", config=TranscribeConfig(backend="assemblyai")
+        ),
+    ),
 )

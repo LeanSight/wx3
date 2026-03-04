@@ -52,4 +52,5 @@ register_step(
     optional=True,
     description="Normalize audio levels to -23 LUFS",
     config_class=NormalizeConfig,
+    needs_audio_fixture=True,
 )

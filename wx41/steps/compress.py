@@ -57,4 +57,5 @@ register_step(
     optional=True,
     description="Compress video using H.264",
     config_class=CompressConfig,
+    input_media_type="video",
 )

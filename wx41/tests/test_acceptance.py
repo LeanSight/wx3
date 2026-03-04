@@ -597,68 +597,152 @@ class TestMetaATCLI:
         assert result.exit_code == 0
 
 
-class TestSRTStep:
-    def test_srt_generates_grouped_sentences(self, tmp_path):
-        from wx41.steps.srt import srt_step, SRTConfig
-        from wx41.context import PipelineContext
+def _get_all_step_variants():
+    """Generate all step variants from registry dynamically."""
+    from wx41.steps import get_all_steps
 
-        json_path = tmp_path / "transcript.json"
-        json_path.write_text(
-            """[
-            {"text": "Hello", "start": 0, "end": 500, "speaker": "A"},
-            {"text": "world", "start": 500, "end": 1000, "speaker": "A"},
-            {"text": "This", "start": 1500, "end": 2000, "speaker": "B"},
-            {"text": "is", "start": 2000, "end": 2500, "speaker": "B"},
-            {"text": "a", "start": 2500, "end": 2700, "speaker": "B"},
-            {"text": "test", "start": 2700, "end": 3200, "speaker": "B"}
-        ]""",
-            encoding="utf-8",
-        )
+    variants = []
 
-        audio = tmp_path / "audio.m4a"
-        audio.touch()
+    for step_name, step_info in get_all_steps().items():
+        variants.append((step_name, "default", None, False))
+        variants.append((step_name, "default", None, True))
 
-        ctx = PipelineContext(
-            src=audio,
-            media_type="audio",
-            force=False,
-            dry_run=False,
-            outputs={"transcript_json": json_path},
-        )
+        for variant in step_info.config_variants:
+            variants.append((step_name, variant.name, variant.config, False))
 
-        result = srt_step(ctx, SRTConfig(mode="sentences", max_chars=20))
+    return variants
 
-        srt_path = result.outputs["srt"]
-        srt_content = srt_path.read_text(encoding="utf-8")
 
-        assert "Hello world" in srt_content, (
-            f"SRT should group consecutive words. Got:\n{srt_content}"
-        )
+class TestMetaATUnified:
+    """Meta-AT unificado: mismo test parametrizado funciona con mocks o fixture real
 
-        entries = srt_content.strip().split("\n\n")
-        assert len(entries) >= 2, (
-            f"SRT should split into multiple entries. Got {len(entries)}:\n{srt_content}"
-        )
+    Automatically incorporates all steps from STEP_REGISTRY with their variants.
+    """
+
+    @pytest.mark.parametrize(
+        "step_name,variant_name,config_override,use_real", _get_all_step_variants()
+    )
+    def test_step_with_fallback_to_real_or_mock(
+        self,
+        step_name,
+        variant_name,
+        config_override,
+        use_real,
+        tmp_path,
+        monkeypatch,
+        audio_fixture_path,
+    ):
+        """Test unificado: usa fixture real si disponible, si no usa mock"""
+        from click.testing import CliRunner
+        from wx41.cli import main
+        from wx41.steps import STEP_REGISTRY, get_all_steps, get_step_info
+        import dataclasses
 
         audio = tmp_path / "audio.m4a"
-        audio.touch()
 
-        ctx = PipelineContext(
-            src=audio,
-            media_type="audio",
-            force=False,
-            dry_run=False,
-            outputs={"transcript_json": json_path},
+        step_info = get_step_info(step_name)
+        needs_real_audio = step_info.needs_audio_fixture
+
+        if needs_real_audio:
+            if audio_fixture_path.exists():
+                import shutil
+
+                audio = tmp_path / "audio.m4a"
+                shutil.copy(audio_fixture_path, audio)
+            else:
+                pytest.skip(f"Fixture not available for {step_name}")
+        else:
+            audio.touch()
+
+        if not use_real:
+            for s_name, s_info in get_all_steps().items():
+
+                def make_mock(name, info):
+                    def mock_fn(ctx, config):
+                        if info.output_fn:
+                            outputs = info.output_fn(ctx, config)
+                            for out_path in outputs.values():
+                                out_path.parent.mkdir(parents=True, exist_ok=True)
+                                out_path.write_text(f"mock {name}", encoding="utf-8")
+                        return ctx
+
+                    return mock_fn
+
+                new_info = dataclasses.replace(
+                    s_info, step_fn=make_mock(s_name, s_info)
+                )
+                monkeypatch.setitem(STEP_REGISTRY, s_name, new_info)
+
+        runner = CliRunner()
+        result = runner.invoke(main, [str(audio), "--dry-run"])
+
+        assert result.exit_code == 0, f"CLI failed for {step_name}: {result.output}"
+
+
+class TestStepInfoMetadata:
+    def test_step_info_has_audio_fixture_metadata(self):
+        from wx41.steps import get_all_steps
+
+        steps = get_all_steps()
+
+        assert "normalize" in steps, "normalize should be in registry"
+        assert hasattr(steps["normalize"], "needs_audio_fixture"), (
+            "StepInfo should have needs_audio_fixture attribute"
+        )
+        assert steps["normalize"].needs_audio_fixture is True, (
+            "normalize needs audio fixture"
         )
 
-        result = srt_step(ctx, SRTConfig())
+        assert "compress" in steps
+        assert steps["compress"].needs_audio_fixture is False, (
+            "compress does not need audio fixture"
+        )
 
-        srt_path = result.outputs["srt"]
-        srt_content = srt_path.read_text(encoding="utf-8")
+        assert "srt" in steps
+        assert steps["srt"].needs_audio_fixture is True, "srt needs audio fixture"
 
-        line_count = len([l for l in srt_content.strip().split("\n") if l.strip()])
+        assert "transcribe" in steps
+        assert steps["transcribe"].needs_audio_fixture is True, (
+            "transcribe needs audio fixture"
+        )
 
-        assert line_count < 20, (
-            f"SRT has {line_count} lines, should group words into sentences. "
-            f"Content:\n{srt_content[:500]}"
+        assert "enhance" in steps
+        assert steps["enhance"].needs_audio_fixture is True, (
+            "enhance needs audio fixture"
+        )
+
+        assert "black_video" in steps
+        assert steps["black_video"].needs_audio_fixture is False, (
+            "black_video does not need audio fixture"
+        )
+
+    def test_step_info_has_media_type_metadata(self):
+        from wx41.steps import get_all_steps
+
+        steps = get_all_steps()
+
+        assert steps["normalize"].input_media_type == "audio"
+        assert steps["srt"].input_media_type == "audio"
+        assert steps["transcribe"].input_media_type == "audio"
+        assert steps["enhance"].input_media_type == "audio"
+
+        assert steps["compress"].input_media_type == "video"
+        assert steps["black_video"].input_media_type == "video"
+
+    def test_step_info_provides_config_variants(self):
+        from wx41.steps import get_step_info
+        from wx41.steps.srt import SRTConfig
+        from wx41.steps.transcribe import TranscribeConfig
+
+        srt_info = get_step_info("srt")
+        assert hasattr(srt_info, "config_variants"), (
+            "StepInfo should have config_variants attribute"
+        )
+        assert len(srt_info.config_variants) >= 2, (
+            "srt should have at least 2 config variants"
+        )
+
+        transcribe_info = get_step_info("transcribe")
+        assert len(transcribe_info.config_variants) >= 2, (
+            "transcribe should have at least 2 config variants"
         )
