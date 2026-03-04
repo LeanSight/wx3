@@ -41,12 +41,17 @@ def normalize_lufs(
         str(src),
         "-af",
         f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        str(dst),
     ]
+
+    dst_ext = dst.suffix.lower()
+    if dst_ext == ".m4a":
+        cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+    elif dst_ext == ".mp3":
+        cmd.extend(["-c:a", "libmp3lame", "-b:a", "192k"])
+    else:
+        cmd.extend(["-c:a", "copy"])
+
+    cmd.append(str(dst))
 
     if progress_callback:
         progress_callback(1, 2)
