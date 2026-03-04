@@ -14,6 +14,7 @@ class SRTConfig:
     output_keys: tuple = ("srt",)
     mode: str = "sentences"
     max_chars: int = 50
+    generate_both: bool = True
 
 
 def ms_to_seconds(ms: int) -> float:
@@ -123,17 +124,22 @@ def srt_step(ctx: PipelineContext, config: SRTConfig) -> PipelineContext:
 
     wx3_chunks = words_to_wx3_chunks(words)
 
-    if config.mode == "speaker":
-        grouped = wx3_chunks
-    else:
-        grouped = group_by_sentences(wx3_chunks, max_chars=config.max_chars)
+    new_outputs = {**ctx.outputs}
 
-    lines = chunks_to_srt_lines(grouped)
+    if config.mode == "speaker" or config.generate_both:
+        speaker_lines = chunks_to_srt_lines(wx3_chunks)
+        speaker_path = audio.parent / f"{audio.stem}_speaker.srt"
+        speaker_path.write_text("\n".join(speaker_lines), encoding="utf-8")
+        new_outputs["srt_speaker"] = speaker_path
 
-    out_path = predict_output_path(audio, "srt", config.output_keys[0])
-    out_path.write_text("\n".join(lines), encoding="utf-8")
+    if config.mode == "sentences" or config.generate_both:
+        sentence_lines = chunks_to_srt_lines(
+            group_by_sentences(wx3_chunks, max_chars=config.max_chars)
+        )
+        sentence_path = predict_output_path(audio, "srt", config.output_keys[0])
+        sentence_path.write_text("\n".join(sentence_lines), encoding="utf-8")
+        new_outputs[config.output_keys[0]] = sentence_path
 
-    new_outputs = {**ctx.outputs, config.output_keys[0]: out_path}
     return dataclasses.replace(ctx, outputs=new_outputs)
 
 
