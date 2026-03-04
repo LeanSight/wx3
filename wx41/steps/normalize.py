@@ -19,27 +19,37 @@ def normalize_step(ctx: PipelineContext, config: NormalizeConfig) -> PipelineCon
         return ctx
     audio = ctx.src
     from wx41.steps import predict_output_path
+
     out_path = predict_output_path(audio, "normalize", config.output_keys[0])
-    normalize_lufs(audio, out_path, progress_callback=ctx.step_progress)
+    normalize_lufs(
+        audio,
+        out_path,
+        target_lufs=config.target_lufs,
+        progress_callback=ctx.step_progress,
+    )
     new_outputs = {**ctx.outputs, config.output_keys[0]: out_path}
     return dataclasses.replace(ctx, outputs=new_outputs)
 
 
-def normalize_output_fn(ctx: PipelineContext, config: NormalizeConfig) -> Dict[str, Path]:
+def normalize_output_fn(
+    ctx: PipelineContext, config: NormalizeConfig
+) -> Dict[str, Path]:
     if not config.enabled:
         return {}
     audio = ctx.src
     from wx41.steps import predict_output_path
+
     out_path = predict_output_path(audio, "normalize", config.output_keys[0])
     return {config.output_keys[0]: out_path}
 
 
 from wx41.steps import register_step
+
 register_step(
-    "normalize", 
-    normalize_step, 
+    "normalize",
+    normalize_step,
     normalize_output_fn,
     optional=True,
     description="Normalize audio levels to -23 LUFS",
-    config_class=NormalizeConfig
+    config_class=NormalizeConfig,
 )

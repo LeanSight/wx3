@@ -446,7 +446,28 @@ class TestPipelineWalkingSkeleton:
             assert len(content) > 0
 
 
-class TestMetaATWithRealFixture:
+class TestNormalizeStep:
+    def test_normalize_produces_valid_audio_file(self, audio_file, tmp_path):
+        from wx41.steps.normalize import normalize_step, NormalizeConfig
+        from wx41.context import PipelineContext
+
+        ctx = PipelineContext(
+            src=audio_file, media_type="audio", force=False, dry_run=False, outputs={}
+        )
+
+        result = normalize_step(ctx, NormalizeConfig())
+
+        assert "normalized" in result.outputs
+        normalized_path = result.outputs["normalized"]
+        assert normalized_path.exists(), "Normalized file should exist"
+        assert normalized_path.stat().st_size > 1000, (
+            f"Normalized file too small ({normalized_path.stat().st_size} bytes), "
+            f"not a valid audio file"
+        )
+        assert normalized_path.suffix in {".m4a", ".mp3", ".wav", ".aac"}, (
+            f"Normalized file should have audio extension, got {normalized_path.suffix}"
+        )
+
     def test_audio_pipeline_produces_all_outputs(self, audio_file):
         from wx41.wx4 import MediaOrchestrator
         from wx41.context import PipelineConfig
