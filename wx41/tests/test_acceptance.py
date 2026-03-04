@@ -595,3 +595,70 @@ class TestMetaATCLI:
         result = runner.invoke(main, [str(audio)])
 
         assert result.exit_code == 0
+
+
+class TestSRTStep:
+    def test_srt_generates_grouped_sentences(self, tmp_path):
+        from wx41.steps.srt import srt_step, SRTConfig
+        from wx41.context import PipelineContext
+
+        json_path = tmp_path / "transcript.json"
+        json_path.write_text(
+            """[
+            {"text": "Hello", "start": 0, "end": 500, "speaker": "A"},
+            {"text": "world", "start": 500, "end": 1000, "speaker": "A"},
+            {"text": "This", "start": 1500, "end": 2000, "speaker": "B"},
+            {"text": "is", "start": 2000, "end": 2500, "speaker": "B"},
+            {"text": "a", "start": 2500, "end": 2700, "speaker": "B"},
+            {"text": "test", "start": 2700, "end": 3200, "speaker": "B"}
+        ]""",
+            encoding="utf-8",
+        )
+
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+
+        ctx = PipelineContext(
+            src=audio,
+            media_type="audio",
+            force=False,
+            dry_run=False,
+            outputs={"transcript_json": json_path},
+        )
+
+        result = srt_step(ctx, SRTConfig(mode="sentences", max_chars=20))
+
+        srt_path = result.outputs["srt"]
+        srt_content = srt_path.read_text(encoding="utf-8")
+
+        assert "Hello world" in srt_content, (
+            f"SRT should group consecutive words. Got:\n{srt_content}"
+        )
+
+        entries = srt_content.strip().split("\n\n")
+        assert len(entries) >= 2, (
+            f"SRT should split into multiple entries. Got {len(entries)}:\n{srt_content}"
+        )
+
+        audio = tmp_path / "audio.m4a"
+        audio.touch()
+
+        ctx = PipelineContext(
+            src=audio,
+            media_type="audio",
+            force=False,
+            dry_run=False,
+            outputs={"transcript_json": json_path},
+        )
+
+        result = srt_step(ctx, SRTConfig())
+
+        srt_path = result.outputs["srt"]
+        srt_content = srt_path.read_text(encoding="utf-8")
+
+        line_count = len([l for l in srt_content.strip().split("\n") if l.strip()])
+
+        assert line_count < 20, (
+            f"SRT has {line_count} lines, should group words into sentences. "
+            f"Content:\n{srt_content[:500]}"
+        )
