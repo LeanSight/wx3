@@ -25,13 +25,6 @@ def normalize_step(ctx: PipelineContext) -> PipelineContext:
     ext = "m4a" if ctx.output_m4a else "wav"
     out = d / f"{stem}{INTERMEDIATE_BY_STEP['normalize']}"
 
-    if ctx.cache_hit or out.exists():
-        return dataclasses.replace(
-            ctx,
-            normalized=out if out.exists() else ctx.normalized,
-            timings={**ctx.timings, "normalize": time.time() - t0},
-        )
-
     tmp_raw = d / f"{stem}._tmp_raw.wav"
     tmp_norm = d / f"{stem}._tmp_norm.wav"
 

@@ -28,11 +28,6 @@ def enhance_step(ctx: PipelineContext) -> PipelineContext:
     """
     t0 = time.time()
 
-    if ctx.cache_hit and ctx.enhanced is not None:
-        return dataclasses.replace(
-            ctx, timings={**ctx.timings, "enhance": time.time() - t0}
-        )
-
     stem = ctx.src.stem
     d = ctx.src.parent
     tmp_enh = d / f"{stem}._tmp_enh.wav"

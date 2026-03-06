@@ -342,9 +342,9 @@ def main(
         None, "--speakers", "-s", help="Expected number of speakers. Default: auto"
     ),
     srt_mode: str = typer.Option(
-        "speaker-only",
+        "sentences",
         "--srt-mode",
-        help="SRT grouping mode: 'speaker-only' or 'sentences'",
+        help="SRT grouping mode: 'sentences' or 'speaker-only'",
     ),
     speakers_map: Optional[str] = typer.Option(
         None, "--speakers-map", help="Speaker name map, e.g. 'A=Marcel,B=Agustin'"

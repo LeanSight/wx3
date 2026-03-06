@@ -88,7 +88,7 @@ class TestCacheSaveStep:
 
         with (
             patch("wx4.steps.cache_save.save_cache") as mock_save,
-            patch("wx4.steps.file_key", return_value="fake-key"),
+            patch("wx4.steps.cache_save.file_key", return_value="fake-key"),
         ):
             from wx4.steps import cache_save_step
 
@@ -122,7 +122,7 @@ class TestCacheSaveStep:
 
         with (
             patch("wx4.steps.cache_save.save_cache"),
-            patch("wx4.steps.file_key", return_value="k"),
+            patch("wx4.steps.cache_save.file_key", return_value="k"),
         ):
             from wx4.steps import cache_save_step
 
@@ -136,15 +136,6 @@ class TestCacheSaveStep:
 
 
 class TestEnhanceStep:
-    def test_returns_cached_path_on_hit(self, tmp_path):
-        enhanced = tmp_path / "audio_enhanced.m4a"
-        ctx = _ctx(tmp_path, cache_hit=True, enhanced=enhanced)
-
-        from wx4.steps import enhance_step
-
-        result = enhance_step(ctx)
-        assert result.enhanced == enhanced
-
     def test_calls_only_clearvoice_and_encode_on_miss(self, tmp_path):
         ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
         mock_cv = MagicMock()
@@ -197,12 +188,20 @@ class TestEnhanceStep:
                 enhance_step(ctx)
 
     def test_timing_recorded(self, tmp_path):
-        enhanced = tmp_path / "audio_enhanced.m4a"
-        ctx = _ctx(tmp_path, cache_hit=True, enhanced=enhanced)
+        ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
 
-        from wx4.steps import enhance_step
+        def fake_to_aac(src, dst, **kw):
+            dst.write_bytes(b"aac")
+            return True
 
-        result = enhance_step(ctx)
+        with (
+            patch("wx4.steps.enhance.apply_clearvoice"),
+            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
+        ):
+            from wx4.steps import enhance_step
+
+            result = enhance_step(ctx)
         assert "enhance" in result.timings
 
 
@@ -240,17 +239,6 @@ class TestCacheCheckStepDiskFallback:
 
 
 class TestNormalizeStep:
-    def test_skips_when_cache_hit(self, tmp_path):
-        ctx = _ctx(tmp_path, cache_hit=True)
-
-        with patch("wx4.steps.normalize.extract_to_wav") as m_ext:
-            from wx4.steps import normalize_step
-
-            result = normalize_step(ctx)
-
-        m_ext.assert_not_called()
-        assert "normalize" in result.timings
-
     def test_calls_extract_normalize_encode(self, tmp_path):
         ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
 
@@ -261,7 +249,7 @@ class TestNormalizeStep:
         with (
             patch("wx4.steps.normalize.extract_to_wav", return_value=True) as m_ext,
             patch("wx4.steps.normalize.normalize_lufs") as m_norm,
-            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac) as m_enc,
+            patch("wx4.steps.normalize.to_aac", side_effect=fake_to_aac) as m_enc,
         ):
             from wx4.steps import normalize_step
 
@@ -273,19 +261,6 @@ class TestNormalizeStep:
         assert result.normalized is not None
         assert result.normalized.name.endswith("_normalized.m4a")
 
-    def test_skips_on_cache_hit(self, tmp_path):
-        norm = tmp_path / "audio_normalized.m4a"
-        norm.write_bytes(b"normalized")
-        ctx = _ctx(tmp_path, cache_hit=True, normalized=norm)
-
-        with patch("wx4.steps.normalize.extract_to_wav") as m_ext:
-            from wx4.steps import normalize_step
-
-            result = normalize_step(ctx)
-
-        m_ext.assert_not_called()
-        assert result.normalized == norm
-
     def test_does_not_call_apply_clearvoice(self, tmp_path):
         ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
 
@@ -296,7 +271,7 @@ class TestNormalizeStep:
         with (
             patch("wx4.steps.normalize.extract_to_wav", return_value=True),
             patch("wx4.steps.normalize.normalize_lufs"),
-            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.normalize.to_aac", side_effect=fake_to_aac),
             patch("wx4.steps.enhance.apply_clearvoice") as m_cv,
         ):
             from wx4.steps import normalize_step
@@ -315,7 +290,7 @@ class TestNormalizeStep:
         with (
             patch("wx4.steps.normalize.extract_to_wav", return_value=True),
             patch("wx4.steps.normalize.normalize_lufs"),
-            patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
+            patch("wx4.steps.normalize.to_aac", side_effect=fake_to_aac),
         ):
             from wx4.steps import normalize_step
 
@@ -396,7 +371,7 @@ class TestNormalizeLufsProgress:
 
 class TestEnhanceStepAtomicity:
     def test_tmp_files_removed_after_success(self, tmp_path):
-        """The 3 tmp files must NOT exist in the directory after a successful enhance."""
+        """tmp_enh must NOT exist after a successful enhance."""
         ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
         stem = ctx.src.stem
 
@@ -405,8 +380,6 @@ class TestEnhanceStepAtomicity:
             return True
 
         with (
-            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize.normalize_lufs"),
             patch("wx4.steps.enhance.apply_clearvoice"),
             patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
             patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
@@ -415,33 +388,18 @@ class TestEnhanceStepAtomicity:
 
             enhance_step(ctx)
 
-        assert not (tmp_path / f"{stem}._tmp_raw.wav").exists()
-        assert not (tmp_path / f"{stem}._tmp_norm.wav").exists()
         assert not (tmp_path / f"{stem}._tmp_enh.wav").exists()
 
     def test_cleanup_runs_even_if_encode_fails(self, tmp_path):
-        """tmp_raw and tmp_norm must be cleaned up even if to_aac raises."""
+        """tmp_enh must be cleaned up even if to_aac fails."""
         ctx = _ctx(tmp_path, cache_hit=False, output_m4a=True)
         stem = ctx.src.stem
-
-        # Simulate tmp files being created by normalize/enhance before encode fails
-        tmp_raw = tmp_path / f"{stem}._tmp_raw.wav"
-        tmp_norm = tmp_path / f"{stem}._tmp_norm.wav"
         tmp_enh = tmp_path / f"{stem}._tmp_enh.wav"
-
-        def fake_extract(src, dst, **kw):
-            dst.write_bytes(b"raw")
-            return True
-
-        def fake_normalize(src, dst, **kw):
-            dst.write_bytes(b"norm")
 
         def fake_enhance(src, dst, *args, **kw):
             dst.write_bytes(b"enh")
 
         with (
-            patch("wx4.steps.normalize.extract_to_wav", side_effect=fake_extract),
-            patch("wx4.steps.normalize.normalize_lufs", side_effect=fake_normalize),
             patch("wx4.steps.enhance.apply_clearvoice", side_effect=fake_enhance),
             patch("wx4.steps.enhance.to_aac", return_value=False),
             patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
@@ -451,8 +409,6 @@ class TestEnhanceStepAtomicity:
             with pytest.raises(RuntimeError):
                 enhance_step(ctx)
 
-        assert not tmp_raw.exists()
-        assert not tmp_norm.exists()
         assert not tmp_enh.exists()
 
     def test_final_output_not_written_when_encode_fails(self, tmp_path):
@@ -461,8 +417,6 @@ class TestEnhanceStepAtomicity:
         out = tmp_path / f"{ctx.src.stem}_enhanced.m4a"
 
         with (
-            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize.normalize_lufs"),
             patch("wx4.steps.enhance.apply_clearvoice"),
             patch("wx4.steps.enhance.to_aac", return_value=False),
             patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
@@ -762,7 +716,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path, compress_ratio=0.40)
         patches = _compress_patches(_video_info())
 
-        with patch.multiple("wx4.steps", **patches):
+        with patch.multiple("wx4.steps.compress", **patches):
             from wx4.steps import compress_step
 
             compress_step(ctx)
@@ -773,7 +727,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path)
 
         with patch(
-            "wx4.steps.video.probe_video", side_effect=RuntimeError("no video stream")
+            "wx4.steps.compress.probe_video", side_effect=RuntimeError("no video stream")
         ):
             from wx4.steps import compress_step
 
@@ -785,7 +739,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path)
 
         with patch(
-            "wx4.steps.video.probe_video", side_effect=RuntimeError("no video stream")
+            "wx4.steps.compress.probe_video", side_effect=RuntimeError("no video stream")
         ):
             from wx4.steps import compress_step
 
@@ -797,7 +751,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path)
         patches = _compress_patches(_video_info(has_audio=True))
 
-        with patch.multiple("wx4.steps", **patches):
+        with patch.multiple("wx4.steps.compress", **patches):
             from wx4.steps import compress_step
 
             compress_step(ctx)
@@ -808,7 +762,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path)
         patches = _compress_patches(_video_info(has_audio=False))
 
-        with patch.multiple("wx4.steps", **patches):
+        with patch.multiple("wx4.steps.compress", **patches):
             from wx4.steps import compress_step
 
             compress_step(ctx)
@@ -820,7 +774,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path, compress_ratio=0.40)
         patches = _compress_patches(_video_info())
 
-        with patch.multiple("wx4.steps", **patches):
+        with patch.multiple("wx4.steps.compress", **patches):
             from wx4.steps import compress_step
 
             compress_step(ctx)
@@ -832,7 +786,7 @@ class TestCompressStep:
         info = _video_info()
         patches = _compress_patches(info)
 
-        with patch.multiple("wx4.steps", **patches):
+        with patch.multiple("wx4.steps.compress", **patches):
             from wx4.steps import compress_step
 
             compress_step(ctx)
@@ -843,7 +797,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path)
         patches = _compress_patches(_video_info())
 
-        with patch.multiple("wx4.steps", **patches):
+        with patch.multiple("wx4.steps.compress", **patches):
             from wx4.steps import compress_step
 
             compress_step(ctx)
@@ -858,7 +812,7 @@ class TestCompressStep:
         ctx.step_progress = MagicMock()
         patches = _compress_patches(_video_info())
 
-        with patch.multiple("wx4.steps", **patches):
+        with patch.multiple("wx4.steps.compress", **patches):
             compress_step(ctx)
 
         call_kwargs = patches["_compress_video"].call_args.kwargs
@@ -869,7 +823,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path)
         patches = _compress_patches(_video_info())
 
-        with patch.multiple("wx4.steps", **patches):
+        with patch.multiple("wx4.steps.compress", **patches):
             from wx4.steps import compress_step
 
             result = compress_step(ctx)
@@ -880,7 +834,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path)
         patches = _compress_patches(_video_info())
 
-        with patch.multiple("wx4.steps", **patches):
+        with patch.multiple("wx4.steps.compress", **patches):
             from wx4.steps import compress_step
 
             result = compress_step(ctx)
@@ -892,7 +846,7 @@ class TestCompressStep:
         ctx = _ctx(tmp_path)
         patches = _compress_patches(_video_info())
 
-        with patch.multiple("wx4.steps", **patches):
+        with patch.multiple("wx4.steps.compress", **patches):
             from wx4.steps import compress_step
 
             result = compress_step(ctx)
@@ -915,8 +869,6 @@ class TestEnhanceStepPassesStepProgress:
             return True
 
         with (
-            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize.normalize_lufs"),
             patch("wx4.steps.enhance.apply_clearvoice") as m_enh,
             patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
             patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),
@@ -935,8 +887,6 @@ class TestEnhanceStepPassesStepProgress:
             return True
 
         with (
-            patch("wx4.steps.normalize.extract_to_wav", return_value=True),
-            patch("wx4.steps.normalize.normalize_lufs"),
             patch("wx4.steps.enhance.apply_clearvoice") as m_enh,
             patch("wx4.steps.enhance.to_aac", side_effect=fake_to_aac),
             patch("wx4.steps.enhance._load_clearvoice", return_value=MagicMock()),

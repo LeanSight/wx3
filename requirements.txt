@@ -7,9 +7,9 @@ torchaudio==2.6.0+cu124
 pyannote.audio==3.3.2
 pyannote.core>=5.0.0
 
-numpy>=1.19.0
+numpy==1.26.4
 scipy>=1.5.0
-librosa>=0.8.0
+librosa==0.10.2.post1
 matplotlib>=3.1.0
 pytorch-lightning>=2.0.0
 
@@ -18,7 +18,10 @@ semver>=3.0
 typing-extensions>=4.0.0
 rich
 transformers
-typer[all]
+typer==0.9.4
+click<8.1
 assemblyai>=0.28.0
 
+clearvoice==0.1.2
+opencv-python-headless==4.10.0.84
 pyav

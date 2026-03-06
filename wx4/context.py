@@ -30,7 +30,7 @@ class PipelineContext:
     srt: Optional[Path] = None
     video_out: Optional[Path] = None
 
-    srt_mode: str = "speaker-only"
+    srt_mode: str = "sentences"
     output_m4a: bool = True
     force: bool = False
     language: Optional[str] = None
